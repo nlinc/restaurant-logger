@@ -4,8 +4,15 @@ import {
     collection, addDoc, doc, updateDoc, getDoc, serverTimestamp,
     query, where, orderBy, limit, onSnapshot,
     signInWithPopup, signOut, onAuthStateChanged,
-    httpsCallable
+    httpsCallable, mapsApiKey
 } from './firebase-config.js';
+
+// Dynamically load Google Maps script with obfuscated API key
+const mapsScript = document.createElement('script');
+mapsScript.src = `https://maps.googleapis.com/maps/api/js?key=${mapsApiKey}&libraries=places&callback=initAutocomplete`;
+mapsScript.async = true;
+mapsScript.defer = true;
+document.head.appendChild(mapsScript);
 
 // ===== DOM Refs =====
 const authScreen = document.getElementById('auth-screen');
