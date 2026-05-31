@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Lincoln Eats — Restaurant Logger</title>
+    <meta name="description" content="Log your restaurant visits, rate your favorites, and get AI-powered dining recommendations based on your taste profile.">
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍽️</text></svg>">
+</head>
+
+<body>
+    <!-- Auth Screen -->
+    <div id="auth-screen" class="auth-screen">
+        <div class="logo">🍽️</div>
+        <h1>Lincoln Eats</h1>
+        <p>Log where you've been. Let AI tell you where to go next.</p>
+        <button id="google-sign-in" class="google-sign-in-btn">
+            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google">
+            Sign in with Google
+        </button>
+    </div>
+
+    <!-- App (hidden until auth) -->
+    <div id="app-container" class="app-container">
+
+        <!-- Header -->
+        <header class="app-header">
+            <div class="brand">
+                <span>🍽️</span>
+                <h1>Lincoln Eats</h1>
+            </div>
+            <div style="position: relative;">
+                <img id="user-avatar" class="user-avatar" src="" alt="User avatar">
+                <div id="sign-out-dropdown" class="sign-out-dropdown">
+                    <button id="sign-out-btn">Sign Out</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- View: Feed (Log + History) -->
+        <main id="view-feed" class="app-view active">
+            <!-- Log Form -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                <p class="section-title" style="margin-bottom: 0;">Log a Visit</p>
+                <button id="scan-receipt-btn" class="scan-receipt-btn" style="background: var(--accent-soft); border: 1px solid var(--accent); color: var(--accent-text); border-radius: var(--radius-xl); padding: 0.3rem 0.75rem; font-size: 0.72rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 0.35rem; transition: all 0.2s;">✨ Scan Receipt/Menu</button>
+            </div>
+            <input type="file" id="receipt-file-input" accept="image/*" style="display: none;">
+            <div class="log-card">
+                <div class="form-group">
+                    <label for="restaurant-search">Restaurant</label>
+                    <input type="text" id="restaurant-search" placeholder="Search for a place..." autocomplete="off">
+                </div>
+
+                <div class="form-group">
+                    <label>Your Rating</label>
+                    <div class="category-rating" id="category-rating">
+                        <input type="radio" id="rating-love" name="rating" value="3"><label for="rating-love">❤️ Love</label>
+                        <input type="radio" id="rating-will-go-back" name="rating" value="2"><label for="rating-will-go-back">👍 Will go back</label>
+                        <input type="radio" id="rating-skip-it" name="rating" value="1"><label for="rating-skip-it">👎 Skip it</label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="tags-input">Tags</label>
+                    <input type="text" id="tags-input" placeholder="Type a tag and press Enter...">
+                    <div class="tags-container" id="tags-container"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="visit-notes">Notes</label>
+                    <textarea id="visit-notes" placeholder="What did you order? Any tips for next time?" rows="2"></textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button id="wishlist-btn" class="wishlist-btn" disabled>Add to Wishlist</button>
+                    <button id="save-btn" class="save-btn" disabled>Save Visit</button>
+                </div>
+            </div>
+
+            <!-- History -->
+            <p class="section-title">Your History</p>
+            <section class="history-section" id="history-section">
+                <div class="empty-state" id="empty-state">
+                    <span class="icon">📍</span>
+                    <p>No visits logged yet.<br>Search for a restaurant above to get started.</p>
+                </div>
+            </section>
+        </main>
+
+        <!-- View: Map -->
+        <main id="view-map" class="app-view">
+            <div class="map-toggle-bar" style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-xl); padding: 0.25rem; max-width: 250px;">
+                <button class="map-toggle-btn active" id="map-toggle-personal" style="flex: 1; padding: 0.4rem; background: var(--accent-soft); border: 1px solid var(--accent); color: var(--accent-text); border-radius: var(--radius-xl); font-size: 0.75rem; font-weight: 600; cursor: pointer; transition: all 0.2s;">My Map</button>
+                <button class="map-toggle-btn" id="map-toggle-circle" disabled style="flex: 1; padding: 0.4rem; background: transparent; border: 1px solid transparent; color: var(--text-muted); border-radius: var(--radius-xl); font-size: 0.75rem; font-weight: 500; cursor: not-allowed; transition: all 0.2s;">Circle Map</button>
+            </div>
+            <div class="map-container">
+                <div id="map"></div>
+                <div class="map-overlay">
+                    <p>Exploring your food world</p>
+                </div>
+            </div>
+        </main>
+
+        <!-- View: Wishlist -->
+        <main id="view-wishlist" class="app-view">
+            <p class="section-title">Want to Go</p>
+            <div class="wishlist-filters">
+                <button class="filter-chip active" data-filter="all">All</button>
+                <button class="filter-chip" data-filter="open">Open Now</button>
+                <button class="filter-chip" data-filter="nearby">Nearby</button>
+            </div>
+            <section class="wishlist-section" id="wishlist-section">
+                <div class="empty-state">
+                    <span class="icon">🔖</span>
+                    <p>Your wishlist is empty.<br>Search for a place and tap "Add to Wishlist" to save it for later.</p>
+                </div>
+            </section>
+        </main>
+
+        <!-- View: Profile -->
+        <main id="view-profile" class="app-view">
+            <div id="profile-dashboard">
+                <!-- Data populated by JS -->
+            </div>
+            <p class="section-title" style="margin-top: 1.5rem;">Dining Circles</p>
+            <div class="circles-card" id="circles-card" style="background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.25rem; margin-bottom: 2rem;">
+                <!-- Loaded dynamically by JS -->
+            </div>
+        </main>
+
+        <!-- Bottom Navigation -->
+        <nav class="bottom-nav">
+            <button class="nav-item active" data-view="feed">
+                <span class="icon">🏠</span>
+                <span class="label">Feed</span>
+            </button>
+            <button class="nav-item" data-view="map">
+                <span class="icon">📍</span>
+                <span class="label">Map</span>
+            </button>
+            <button class="nav-item" data-view="wishlist">
+                <span class="icon">🔖</span>
+                <span class="label">Wishlist</span>
+            </button>
+            <button class="nav-item" data-view="profile">
+                <span class="icon">👤</span>
+                <span class="label">Profile</span>
+            </button>
+        </nav>
+
+    </div>
+
+    <!-- AI FAB -->
+    <button id="ai-fab" class="ai-fab" style="display:none;" title="Get AI recommendations">✨</button>
+
+    <!-- AI Modal -->
+    <div id="ai-overlay" class="ai-overlay"></div>
+    <div id="ai-modal" class="ai-modal">
+        <div class="ai-modal-handle"></div>
+        <h2>✨ Ask Lincoln — Dining Concierge</h2>
+        <p class="subtitle">AI analyzes your taste profile and curates dining plans.</p>
+        
+        <!-- Mood Chips Container -->
+        <div class="ai-mood-chips" id="ai-mood-chips">
+            <button class="mood-chip" data-mood="date-night">🕯️ Date Night</button>
+            <button class="mood-chip" data-mood="cheap-eats">🪙 Cheap Eats</button>
+            <button class="mood-chip" data-mood="hangover-cure">🍳 Hangover Cure</button>
+            <button class="mood-chip" data-mood="outdoor-seating">☀️ Patio Vibes</button>
+            <button class="mood-chip" data-mood="spicy">🌶️ Something Spicy</button>
+            <button class="mood-chip" data-mood="sweet">🍰 Sweet Tooth</button>
+        </div>
+
+        <!-- Chat History Area -->
+        <div class="ai-chat-container" id="ai-chat-container">
+            <div class="ai-chat-welcome" id="ai-chat-welcome">
+                <span class="concierge-avatar">✨</span>
+                <p>Hello! I am Lincoln, your personal dining concierge. Choose a mood above, or describe exactly what you're craving nearby!</p>
+            </div>
+            <div id="ai-chat-history" class="ai-chat-history"></div>
+            <div id="ai-loading" class="ai-loading">
+                <div class="spinner"></div>
+                <p>Curating personalized suggestions...</p>
+            </div>
+        </div>
+
+        <!-- Chat Input Form -->
+        <form id="ai-chat-form" class="ai-chat-form" autocomplete="off">
+            <input type="text" id="ai-chat-input" placeholder="Ask Lincoln (e.g., 'cozy Italian wine bar nearby')..." required>
+            <button type="submit" id="ai-send-btn" class="ai-send-btn" aria-label="Send message">✨</button>
+        </form>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="toast"></div>
+
+    <!-- Scripts -->
+    <script>
+        // Bridge: module scripts are deferred, so we queue the callback
+        // until app.js has registered the real handler on window.
+        window._mapsReady = new Promise(resolve => {
+            window.initAutocomplete = resolve;
+        });
+    </script>
+    <script async
+        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDfMC08nUcjpt84bjrCGPP5yXbRjTi_huQ&libraries=places&callback=initAutocomplete"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script type="module" src="js/app.js"></script>
+</body>
+
+</html>

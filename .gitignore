@@ -1,0 +1,23 @@
+# Dependency directories
+node_modules/
+jspm_packages/
+web_package/
+
+# Firebase Cache/logs
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+.runtimeconfig.json
+
+# Local env files
+.env
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Output/temp files
+functions/output.txt
+scratch/output.txt
