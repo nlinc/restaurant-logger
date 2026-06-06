@@ -11,8 +11,10 @@ service cloud.firestore {
     
     // Saved Places rules
     match /saved_places/{docId} {
-      // Personal logs and recommendation feedback are private to the owner.
-      allow read: if isOwner(resource.data.uid);
+      // Personal logs and recommendation feedback are private to the owner, 
+      // unless shared within a Dining Circle they both belong to.
+      allow read: if isOwner(resource.data.uid)
+        || (resource.data.get('circle_id', null) != null && get(/databases/$(database)/documents/circles/$(resource.data.circle_id)).data.members.get(request.auth.uid, false) == true);
       // Only the owner can create or modify their own logs
       allow create: if isOwner(request.resource.data.uid);
       allow update: if isOwner(resource.data.uid)

@@ -439,7 +439,8 @@ async function handleSave(status) {
         receipt: status === 'visited' && scannedReceiptData ? scannedReceiptData : null,
         status: status,
         visited_at: serverTimestamp(),
-        uid: currentUser.uid
+        uid: currentUser.uid,
+        circle_id: currentCircle ? currentCircle.id : null
     };
 
     try {
@@ -913,7 +914,8 @@ async function saveRecommendation(rec, status) {
         source: 'ai_recommendation',
         acted_at: serverTimestamp(),
         visited_at: serverTimestamp(),
-        uid: currentUser.uid
+        uid: currentUser.uid,
+        circle_id: currentCircle ? currentCircle.id : null
     };
 
     if (targetId) {
@@ -1419,7 +1421,7 @@ function listenToCirclePlaces() {
 
     const q = query(
         collection(db, "saved_places"),
-        where("uid", "==", currentUser.uid)
+        where("circle_id", "==", currentCircle.id)
     );
 
     circlePlacesUnsubscribe = onSnapshot(q, (snapshot) => {
@@ -1431,9 +1433,48 @@ function listenToCirclePlaces() {
         if (showCircleMap) {
             updateMarkers();
         }
+        renderCirclesUI();
     }, (error) => {
         console.error("Circle places listener error:", error);
     });
+}
+
+async function associatePlacesWithCircle(circleId) {
+    if (!currentUser) return;
+    try {
+        const q = query(
+            collection(db, "saved_places"),
+            where("uid", "==", currentUser.uid)
+        );
+        const snap = await getDocs(q);
+        const promises = [];
+        snap.forEach(docSnap => {
+            promises.push(updateDoc(doc(db, "saved_places", docSnap.id), { circle_id: circleId }));
+        });
+        await Promise.all(promises);
+        console.log(`Associated ${promises.length} places with circle ${circleId}`);
+    } catch (e) {
+        console.error("Error associating places with circle:", e);
+    }
+}
+
+async function disassociatePlacesFromCircle() {
+    if (!currentUser) return;
+    try {
+        const q = query(
+            collection(db, "saved_places"),
+            where("uid", "==", currentUser.uid)
+        );
+        const snap = await getDocs(q);
+        const promises = [];
+        snap.forEach(docSnap => {
+            promises.push(updateDoc(doc(db, "saved_places", docSnap.id), { circle_id: null }));
+        });
+        await Promise.all(promises);
+        console.log(`Disassociated ${promises.length} places from circle`);
+    } catch (e) {
+        console.error("Error disassociating places from circle:", e);
+    }
 }
 
 function renderCirclesUI() {
@@ -1467,6 +1508,52 @@ function renderCirclesUI() {
             </div>
         `).join('');
 
+        const recentVisits = circlePlaces
+            .filter(p => (!p.status || p.status === 'visited') && p.uid)
+            .sort((a, b) => getPlaceTime(b) - getPlaceTime(a))
+            .slice(0, 10);
+
+        let activityHtml = '';
+        if (recentVisits.length > 0) {
+            activityHtml = `
+                <div style="margin-top: 1rem; border-top: 1px solid var(--border); padding-top: 0.75rem;">
+                    <p style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.5rem;">Recent Circle Activity</p>
+                    <div class="circle-activity-list" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 250px; overflow-y: auto; padding-right: 0.25rem;">
+                        ${recentVisits.map(visit => {
+                            const memberName = currentCircle.membersInfo?.[visit.uid]?.displayName || 'A Friend';
+                            const memberPhoto = currentCircle.membersInfo?.[visit.uid]?.photoURL || 'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg';
+                            const ratingLabel = renderCategoryBadge(visit.user_rating);
+                            const dateStr = visit.visited_at?.toDate ? formatDate(visit.visited_at.toDate()) : '';
+                            return `
+                                <div class="circle-activity-item" style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.6rem; display: flex; flex-direction: column; gap: 0.25rem;">
+                                    <div style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: var(--text-muted);">
+                                        <img src="${memberPhoto}" alt="${escapeHtml(memberName)}" style="width: 16px; height: 16px; border-radius: 50%;">
+                                        <strong style="color: var(--text-primary);">${escapeHtml(memberName)}</strong>
+                                        <span>visited</span>
+                                        <span style="margin-left: auto;">${dateStr}</span>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.1rem;">
+                                        <span style="font-weight: 600; font-size: 0.85rem; color: var(--text-primary);">${escapeHtml(visit.name)}</span>
+                                        <span style="font-size: 0.7rem; color: var(--accent); font-weight: 500;">${ratingLabel}</span>
+                                    </div>
+                                    ${visit.notes ? `<p style="margin: 0; font-size: 0.75rem; color: var(--text-secondary); line-height: 1.3;">${escapeHtml(visit.notes)}</p>` : ''}
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+        } else {
+            activityHtml = `
+                <div style="margin-top: 1rem; border-top: 1px solid var(--border); padding-top: 0.75rem;">
+                    <p style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.5rem;">Recent Circle Activity</p>
+                    <div style="text-align: center; padding: 1.25rem; color: var(--text-muted); font-size: 0.75rem; border: 1px dashed var(--border); border-radius: var(--radius-md);">
+                        No circle activity logged yet.
+                    </div>
+                </div>
+            `;
+        }
+
         circlesCard.innerHTML = `
             <div class="circles-dashboard active-circle-view">
                 <div class="circle-header-title">
@@ -1480,6 +1567,8 @@ function renderCirclesUI() {
                 <div class="circle-members-list">
                     ${membersHtml}
                 </div>
+
+                ${activityHtml}
             </div>
         `;
 
@@ -1524,7 +1613,8 @@ async function handleCreateCircle() {
             created_at: serverTimestamp()
         };
 
-        await addDoc(collection(db, "circles"), payload);
+        const circleRef = await addDoc(collection(db, "circles"), payload);
+        await associatePlacesWithCircle(circleRef.id);
         showToast('🎉 Dining Circle created!', 'success');
     } catch (e) {
         console.error("Create circle error:", e);
@@ -1570,6 +1660,7 @@ async function handleJoinCircle() {
             membersInfo: updatedMembersInfo
         });
 
+        await associatePlacesWithCircle(circleDoc.id);
         showToast('🎉 Joined circle successfully!', 'success');
     } catch (e) {
         console.error("Join circle error:", e);
@@ -1604,6 +1695,7 @@ async function handleLeaveCircle() {
             updates.owner = Object.keys(updatedMembers)[0];
         }
 
+        await disassociatePlacesFromCircle();
         await updateDoc(doc(db, "circles", currentCircle.id), updates);
         showToast('Left the circle.', 'info');
     } catch (e) {
