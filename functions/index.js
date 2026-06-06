@@ -291,8 +291,8 @@ const prompt = `Analyze this uploaded image (which is a restaurant receipt or me
 1. The restaurant's name.
 2. An inferred dining rating on our 1 to 3 scale (3: Loved it / High spending/great dishes, 2: Good/standard, 1: Disliked/Skip it). If you can't tell, default to 2.
 3. Relevant cuisine tags (e.g. "sushi", "tacos", "italian", "dessert") and dining style tags (e.g., "brunch", "fine-dining", "dinner"). Output 2-4 tags.
-4. Specific food or drink items ordered. Output clean item names, not prices or quantities, unless quantity is important.
-5. Auto-generated friendly visit notes based on the items listed in the receipt or dishes on the menu (e.g., "Ordered the spicy tuna roll and truffle fries. Great quick dinner!").
+4. Specific food or drink items ordered. Output clean item names, not prices or quantities, unless quantity is important. Exclude non-food/non-drink lines like tax, tip, discounts, service charges, card fees, subtotal, or total.
+5. Auto-generated friendly visit notes based on the items listed in the receipt or dishes on the menu (e.g., "Ordered the spicy tuna roll and truffle fries. Great quick dinner!"). Avoid mentioning prices, taxes, service charges, or fees in the notes.
 6. The price level (1: Cheap, 2: Moderate, 3: Expensive, 4: Ultra Luxury).
 7. Total amount if visible, formatted like "$45.32", otherwise null.
 8. Estimated address or area if visible, otherwise null.

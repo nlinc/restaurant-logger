@@ -614,6 +614,42 @@ function cleanVisitNotes(notes) {
     return notes;
 }
 
+function formatOrderItems(items) {
+    if (!Array.isArray(items)) return '';
+    
+    // Filter out common receipt clutter (taxes, tips, service charges, card fees, etc.)
+    const junkKeywords = [
+        'service charge', 'service chg', 'tax', 'tip', 'gratuity', 
+        'subtotal', 'total', 'discount', 'surcharge', 'convenience fee',
+        'round up', 'charge (', 'chg ('
+    ];
+    
+    const cleanItems = items
+        .map(item => item.trim())
+        .filter(item => {
+            if (!item) return false;
+            const lower = item.toLowerCase();
+            return !junkKeywords.some(keyword => lower.includes(keyword));
+        })
+        .map(item => {
+            if (item.length === 0) return '';
+            return item.charAt(0).toUpperCase() + item.slice(1);
+        });
+
+    if (cleanItems.length === 0) return '';
+
+    // Join into a clean natural language list
+    if (cleanItems.length === 1) {
+        return `Ate ${cleanItems[0]}`;
+    } else if (cleanItems.length === 2) {
+        return `Ate ${cleanItems[0]} and ${cleanItems[1]}`;
+    } else {
+        const last = cleanItems.pop();
+        return `Ate ${cleanItems.join(', ')}, and ${last}`;
+    }
+}
+
+
 function renderHistoryFeed() {
     historySection.querySelectorAll('.visit-card').forEach(c => c.remove());
 
@@ -678,8 +714,9 @@ function renderHistoryFeed() {
         const orderItems = Array.isArray(visit.order_items) ? visit.order_items.filter(Boolean) : [];
         const totalAmount = visit.total_amount || visit.receipt?.total_amount || null;
         let orderHtmlString = '';
-        if (orderItems.length) {
-            orderHtmlString = `<p class="visit-card-order" style="font-size: 0.82rem; margin-bottom: 0.25rem; color: var(--text-primary);">🍽️ <strong>Ate:</strong> ${escapeHtml(orderItems.join(', '))}</p>`;
+        const formattedOrderText = formatOrderItems(orderItems);
+        if (formattedOrderText) {
+            orderHtmlString = `<p class="visit-card-order" style="font-size: 0.82rem; margin-bottom: 0.25rem; color: var(--text-primary);">🍽️ ${escapeHtml(formattedOrderText)}</p>`;
         }
         if (totalAmount) {
             orderHtmlString += `<p class="visit-card-total" style="font-size: 0.78rem; margin-bottom: 0.4rem; color: var(--text-secondary);">💰 <strong>Total:</strong> ${escapeHtml(totalAmount)}</p>`;
@@ -1794,7 +1831,7 @@ if ('serviceWorker' in navigator) {
             window.location.reload();
         });
 
-        navigator.serviceWorker.register('/sw.js?v=13')
+        navigator.serviceWorker.register('/sw.js?v=14')
             .then(reg => {
                 console.log('Service Worker registered successfully.', reg.scope);
                 reg.update();

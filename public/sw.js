@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lincoln-eats-v13';
+const CACHE_NAME = 'lincoln-eats-v14';
 const ASSETS = [
   '/',
   '/index.html',
