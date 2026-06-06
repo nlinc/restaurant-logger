@@ -417,12 +417,8 @@ function normalizeReceiptData(data) {
 
 function applyReceiptDetailsToForm(receipt) {
     if (!receipt) return;
-
-    const orderText = receipt.order_items.length ? `Ate: ${receipt.order_items.join(', ')}` : '';
-    const totalText = receipt.total_amount ? `Total: ${receipt.total_amount}` : '';
-    const pieces = [orderText, totalText, receipt.notes].filter(Boolean);
-    if (pieces.length) {
-        notesInput.value = [notesInput.value.trim(), pieces.join(' | ')].filter(Boolean).join('\n');
+    if (receipt.notes) {
+        notesInput.value = [notesInput.value.trim(), receipt.notes].filter(Boolean).join('\n');
     }
 }
 
@@ -451,6 +447,7 @@ async function handleSave(status) {
         tags: [...tags],
         notes: notesInput.value.trim(),
         order_items: status === 'visited' ? [...(scannedReceiptData?.order_items || [])] : [],
+        total_amount: status === 'visited' ? (scannedReceiptData?.total_amount || null) : null,
         receipt: status === 'visited' && scannedReceiptData ? scannedReceiptData : null,
         status: status,
         visited_at: serverTimestamp(),
@@ -663,7 +660,14 @@ function renderHistoryFeed() {
         const date = visit.visited_at?.toDate ? formatDate(visit.visited_at.toDate()) : '';
         const tagsHtml = (visit.tags || []).map(t => `<span class="visit-tag">${escapeHtml(t)}</span>`).join('');
         const orderItems = Array.isArray(visit.order_items) ? visit.order_items.filter(Boolean) : [];
-        const orderHtml = orderItems.length ? `<p class="visit-card-order">Ate: ${escapeHtml(orderItems.join(', '))}</p>` : '';
+        const totalAmount = visit.total_amount || visit.receipt?.total_amount || null;
+        let orderHtmlString = '';
+        if (orderItems.length) {
+            orderHtmlString = `<p class="visit-card-order" style="font-size: 0.82rem; margin-bottom: 0.25rem; color: var(--text-primary);">🍽️ <strong>Ate:</strong> ${escapeHtml(orderItems.join(', '))}</p>`;
+        }
+        if (totalAmount) {
+            orderHtmlString += `<p class="visit-card-total" style="font-size: 0.78rem; margin-bottom: 0.4rem; color: var(--text-secondary);">💰 <strong>Total:</strong> ${escapeHtml(totalAmount)}</p>`;
+        }
         
         // Stats are only relevant for personal visits
         let repeatHtml = '';
@@ -682,7 +686,7 @@ function renderHistoryFeed() {
                 </div>
             </div>
             ${stars ? `<div class="visit-card-stars">${stars}</div>` : ''}
-            ${orderHtml}
+            ${orderHtmlString}
             ${visit.notes ? `<p class="visit-card-notes">${escapeHtml(visit.notes)}</p>` : ''}
             ${tagsHtml ? `<div class="visit-card-tags">${tagsHtml}</div>` : ''}
             ${renderCardActions(visit.name, visit.lat, visit.lng)}
@@ -1774,7 +1778,7 @@ if ('serviceWorker' in navigator) {
             window.location.reload();
         });
 
-        navigator.serviceWorker.register('/sw.js?v=11')
+        navigator.serviceWorker.register('/sw.js?v=12')
             .then(reg => {
                 console.log('Service Worker registered successfully.', reg.scope);
                 reg.update();
