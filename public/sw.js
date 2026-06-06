@@ -1,10 +1,15 @@
-const CACHE_NAME = 'lincoln-eats-v4';
+const CACHE_NAME = 'lincoln-eats-v5';
 const ASSETS = [
   '/',
   '/index.html',
+  '/manifest.json',
   '/css/styles.css',
   '/js/app.js',
-  '/js/firebase-config.js'
+  '/js/firebase-config.js',
+  '/icons/icon-180.png',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/icons/maskable-512.png'
 ];
 
 // Install: Cache essential shell assets
