@@ -287,20 +287,24 @@ exports.scanReceipt = onCall({ secrets: [geminiApiKey], cors: true, invoker: "pu
         const apiKey = geminiApiKey.value();
         const ai = new GoogleGenAI({ apiKey });
 
-        const prompt = `Analyze this uploaded image (which is a restaurant receipt or menu) and extract:
+const prompt = `Analyze this uploaded image (which is a restaurant receipt or menu) and extract:
 1. The restaurant's name.
 2. An inferred dining rating on our 1 to 3 scale (3: Loved it / High spending/great dishes, 2: Good/standard, 1: Disliked/Skip it). If you can't tell, default to 2.
 3. Relevant cuisine tags (e.g. "sushi", "tacos", "italian", "dessert") and dining style tags (e.g., "brunch", "fine-dining", "dinner"). Output 2-4 tags.
-4. Auto-generated friendly visit notes based on the items listed in the receipt or dishes on the menu (e.g., "Ordered the spicy tuna roll and truffle fries. Spent $45. Great quick dinner!").
-5. The price level (1: Cheap, 2: Moderate, 3: Expensive, 4: Ultra Luxury).
-6. Estimated address or area if visible, otherwise null.
+4. Specific food or drink items ordered. Output clean item names, not prices or quantities, unless quantity is important.
+5. Auto-generated friendly visit notes based on the items listed in the receipt or dishes on the menu (e.g., "Ordered the spicy tuna roll and truffle fries. Great quick dinner!").
+6. The price level (1: Cheap, 2: Moderate, 3: Expensive, 4: Ultra Luxury).
+7. Total amount if visible, formatted like "$45.32", otherwise null.
+8. Estimated address or area if visible, otherwise null.
 
 OUTPUT: Return ONLY a valid JSON object matching this schema, without Markdown formatting brackets:
 {
   "restaurantName": "Name of Restaurant",
   "rating": 3,
   "tags": ["tag1", "tag2"],
+  "orderItems": ["spicy tuna roll", "truffle fries"],
   "notes": "What was ordered / visit summary",
+  "totalAmount": "$45.32",
   "priceLevel": 2,
   "address": "Street Address if visible, otherwise null",
   "suggestedCuisines": ["cuisine_type_1", "cuisine_type_2"]

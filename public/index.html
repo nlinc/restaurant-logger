@@ -53,9 +53,9 @@
             <!-- Log Form -->
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
                 <p class="section-title" style="margin-bottom: 0;">Log a Visit</p>
-                <button id="scan-receipt-btn" class="scan-receipt-btn" style="background: var(--accent-soft); border: 1px solid var(--accent); color: var(--accent-text); border-radius: var(--radius-xl); padding: 0.3rem 0.75rem; font-size: 0.72rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 0.35rem; transition: all 0.2s;">✨ Scan Receipt/Menu</button>
+                <button id="scan-receipt-btn" class="scan-receipt-btn">Scan Receipt</button>
             </div>
-            <input type="file" id="receipt-file-input" accept="image/*" style="display: none;">
+            <input type="file" id="receipt-file-input" accept="image/*" capture="environment" style="display: none;">
             <div class="log-card">
                 <div class="form-group">
                     <label for="restaurant-search">Restaurant</label>
@@ -99,6 +99,7 @@
                         <p class="next-pick-copy" id="next-pick-copy">Log a few places and Lincoln will start suggesting where to go next.</p>
                     </div>
                     <button id="get-recommendation-btn" class="small-action-btn">Suggest</button>
+                    <button id="open-concierge-btn" class="small-action-btn secondary">Ask</button>
                 </div>
                 <div id="home-recommendations" class="recommendation-list"></div>
                 <div id="recommendation-history" class="recommendation-history"></div>
@@ -176,7 +177,7 @@
 
     </div>
 
-    <!-- AI FAB -->
+    <!-- AI FAB retained for backwards compatibility; primary access is in Recommended Next -->
     <button id="ai-fab" class="ai-fab" style="display:none;" title="Get AI recommendations">✨</button>
 
     <!-- AI Modal -->

@@ -35,6 +35,7 @@ const wishlistBtn = document.getElementById('wishlist-btn');
 const emptyState = document.getElementById('empty-state');
 const nextPickCopy = document.getElementById('next-pick-copy');
 const getRecommendationBtn = document.getElementById('get-recommendation-btn');
+const openConciergeBtn = document.getElementById('open-concierge-btn');
 const homeRecommendations = document.getElementById('home-recommendations');
 const recommendationHistory = document.getElementById('recommendation-history');
 
@@ -72,6 +73,7 @@ let circleUnsubscribe = null;
 let circlePlaces = [];
 let circlePlacesUnsubscribe = null;
 let showCircleMap = false;
+let scannedReceiptData = null;
 const recommendationCache = new Map();
 
 // ===== Auth =====
@@ -144,7 +146,7 @@ onAuthStateChanged(auth, (user) => {
     if (user) {
         authScreen.style.display = 'none';
         appContainer.classList.add('active');
-        aiFab.style.display = 'flex';
+        aiFab.style.display = 'none';
         userAvatar.src = user.photoURL || '';
         userAvatar.alt = user.displayName || 'User';
         listenToHistory();
@@ -296,6 +298,7 @@ function updateSaveBtn() {
 saveBtn.addEventListener('click', () => handleSave('visited'));
 wishlistBtn.addEventListener('click', () => handleSave('wishlist'));
 getRecommendationBtn.addEventListener('click', handleHomeRecommendations);
+openConciergeBtn.addEventListener('click', openAiModal);
 
 document.addEventListener('click', async (e) => {
     const actionBtn = e.target.closest('[data-rec-action]');
@@ -341,11 +344,12 @@ receiptFileInput.addEventListener('change', async (e) => {
             throw new Error(data.error);
         }
 
-        // Auto-fill fields from scanned output
-        if (data.restaurantName) {
+        scannedReceiptData = normalizeReceiptData(data);
+
+        // Auto-fill fields from scanned output. If a restaurant is already selected,
+        // keep that place and only add meal details to the current log.
+        if (data.restaurantName && !selectedPlace) {
             searchInput.value = data.restaurantName;
-            
-            // Try to trigger Places Autocomplete or mock a Place object
             selectedPlace = {
                 place_id: "scanned_" + Date.now(),
                 name: data.restaurantName,
@@ -372,11 +376,9 @@ receiptFileInput.addEventListener('change', async (e) => {
         }
 
         // Auto-fill notes
-        if (data.notes) {
-            notesInput.value = data.notes;
-        }
+        applyReceiptDetailsToForm(scannedReceiptData);
 
-        showToast('✨ Receipt scanned and populated successfully!', 'success');
+        showToast('Receipt details added to this log.', 'success');
 
     } catch (err) {
         console.error("Receipt Scanner Error:", err);
@@ -386,6 +388,28 @@ receiptFileInput.addEventListener('change', async (e) => {
         scanReceiptBtn.textContent = originalText;
     }
 });
+
+function normalizeReceiptData(data) {
+    const orderItems = Array.isArray(data.orderItems) ? data.orderItems.filter(Boolean) : [];
+    return {
+        restaurant_name: data.restaurantName || '',
+        order_items: orderItems,
+        total_amount: data.totalAmount ?? null,
+        notes: data.notes || '',
+        tags: Array.isArray(data.tags) ? data.tags : []
+    };
+}
+
+function applyReceiptDetailsToForm(receipt) {
+    if (!receipt) return;
+
+    const orderText = receipt.order_items.length ? `Ate: ${receipt.order_items.join(', ')}` : '';
+    const totalText = receipt.total_amount ? `Total: ${receipt.total_amount}` : '';
+    const pieces = [orderText, totalText, receipt.notes].filter(Boolean);
+    if (pieces.length) {
+        notesInput.value = [notesInput.value.trim(), pieces.join(' | ')].filter(Boolean).join('\n');
+    }
+}
 
 function convertFileToBase64(file) {
     return new Promise((resolve, reject) => {
@@ -411,6 +435,8 @@ async function handleSave(status) {
         user_rating: status === 'visited' ? getSelectedRating() : null,
         tags: [...tags],
         notes: notesInput.value.trim(),
+        order_items: status === 'visited' ? [...(scannedReceiptData?.order_items || [])] : [],
+        receipt: status === 'visited' && scannedReceiptData ? scannedReceiptData : null,
         status: status,
         visited_at: serverTimestamp(),
         uid: currentUser.uid
@@ -422,6 +448,9 @@ async function handleSave(status) {
             if (status === 'visited' && ['wishlist', 'recommended', 'dismissed'].includes(existing.status)) {
                 await updateDoc(doc(db, "saved_places", existing.id), payload);
                 showToast(existing.status === 'wishlist' ? 'Wishlist item converted to visit.' : 'Recommendation converted to visit.', 'success');
+            } else if (status === 'visited') {
+                await addDoc(collection(db, "saved_places"), payload);
+                showToast('Visit saved!', 'success');
             } else if (status === 'wishlist' && (!existing.status || existing.status === 'visited')) {
                 showToast('You already logged this place.', 'info');
                 btn.disabled = false;
@@ -454,6 +483,7 @@ async function handleSave(status) {
         searchInput.value = '';
         notesInput.value = '';
         selectedPlace = null;
+        scannedReceiptData = null;
         tags = [];
         renderTags();
         const checked = document.querySelector('.category-rating input:checked');
@@ -530,6 +560,8 @@ function updateViews() {
 
 function renderCardActions(name, lat, lng) {
     const encodedName = encodeURIComponent(name);
+    const mapsQuery = lat && lng ? `${lat},${lng}` : encodedName;
+    const mapsLink = `<a href="https://www.google.com/maps/search/?api=1&query=${mapsQuery}" target="_blank" class="action-link primary-action" title="Open in Maps">Get me there</a>`;
     let uberLink = '';
     if (lat && lng) {
         uberLink = `<a href="https://m.uber.com/ul/?action=setPickup&dropoff[latitude]=${lat}&dropoff[longitude]=${lng}&dropoff[nickname]=${encodedName}" target="_blank" class="action-link" title="Uber to restaurant">🚗 Uber</a>`;
@@ -539,6 +571,7 @@ function renderCardActions(name, lat, lng) {
     
     return `
         <div class="visit-card-actions">
+            ${mapsLink}
             ${resyLink}
             ${otLink}
             ${uberLink}
@@ -563,13 +596,21 @@ function renderHistory(visits) {
         const stars = renderCategoryBadge(visit.user_rating);
         const date = visit.visited_at?.toDate ? formatDate(visit.visited_at.toDate()) : '';
         const tagsHtml = (visit.tags || []).map(t => `<span class="visit-tag">${escapeHtml(t)}</span>`).join('');
+        const orderItems = Array.isArray(visit.order_items) ? visit.order_items.filter(Boolean) : [];
+        const orderHtml = orderItems.length ? `<p class="visit-card-order">Ate: ${escapeHtml(orderItems.join(', '))}</p>` : '';
+        const visitStats = getRestaurantVisitStats(visit);
+        const repeatHtml = visitStats.count > 1 ? `<span class="visit-count-pill">${visitStats.count} visits</span>` : '';
 
         card.innerHTML = `
             <div class="visit-card-header">
                 <span class="visit-card-name">${escapeHtml(visit.name)}</span>
-                <span class="visit-card-date">${date}</span>
+                <div class="visit-card-meta">
+                    ${repeatHtml}
+                    <span class="visit-card-date">${date}</span>
+                </div>
             </div>
             ${stars ? `<div class="visit-card-stars">${stars}</div>` : ''}
+            ${orderHtml}
             ${visit.notes ? `<p class="visit-card-notes">${escapeHtml(visit.notes)}</p>` : ''}
             ${tagsHtml ? `<div class="visit-card-tags">${tagsHtml}</div>` : ''}
             ${renderCardActions(visit.name, visit.lat, visit.lng)}
@@ -577,6 +618,11 @@ function renderHistory(visits) {
 
         historySection.appendChild(card);
     });
+}
+
+function getRestaurantVisitStats(place) {
+    const visits = allPlaces.filter(saved => (!saved.status || saved.status === 'visited') && isSamePlace(saved, place));
+    return { count: visits.length };
 }
 
 function renderWishlist(places, filter = 'all') {
@@ -1172,10 +1218,12 @@ function initTasteRadar(scores) {
 }
 
 // ===== AI Conversational Concierge =====
-aiFab.addEventListener('click', () => {
+aiFab.addEventListener('click', openAiModal);
+
+function openAiModal() {
     aiOverlay.classList.add('active');
     aiModal.classList.add('active');
-});
+}
 
 aiOverlay.addEventListener('click', closeAiModal);
 
