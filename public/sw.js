@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lincoln-eats-v8';
+const CACHE_NAME = 'lincoln-eats-v9';
 const ASSETS = [
   '/',
   '/index.html',
@@ -63,14 +63,14 @@ self.addEventListener('fetch', (e) => {
           }
           return networkResponse;
         } catch (err) {
-          const cachedResponse = await caches.match(e.request);
+          const cachedResponse = await caches.match(e.request, { ignoreSearch: true });
           if (cachedResponse) return cachedResponse;
           if (e.request.mode === 'navigate') return caches.match('/index.html');
           throw err;
         }
       }
 
-      const cachedResponse = await caches.match(e.request);
+      const cachedResponse = await caches.match(e.request, { ignoreSearch: true });
       if (cachedResponse) return cachedResponse;
 
       const networkResponse = await fetch(e.request);
