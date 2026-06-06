@@ -1,6 +1,6 @@
 // Lincoln Eats — Firebase Configuration
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, addDoc, doc, updateDoc, getDoc, serverTimestamp, query, where, orderBy, limit, onSnapshot, getDocs } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, doc, updateDoc, deleteDoc, getDoc, serverTimestamp, query, where, orderBy, limit, onSnapshot, getDocs } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-functions.js";
 
@@ -25,4 +25,4 @@ googleProvider.setCustomParameters({
   prompt: "select_account"
 });
 
-export { collection, addDoc, doc, updateDoc, getDoc, serverTimestamp, query, where, orderBy, limit, onSnapshot, getDocs, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, httpsCallable };
+export { collection, addDoc, doc, updateDoc, deleteDoc, getDoc, serverTimestamp, query, where, orderBy, limit, onSnapshot, getDocs, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, httpsCallable };

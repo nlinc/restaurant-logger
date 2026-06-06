@@ -1,7 +1,7 @@
 // Lincoln Eats — App Logic
 import {
     db, auth, functions, googleProvider,
-    collection, addDoc, doc, updateDoc, serverTimestamp,
+    collection, addDoc, doc, updateDoc, deleteDoc, serverTimestamp,
     query, where, orderBy, limit, onSnapshot, getDocs,
     signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged,
     httpsCallable, mapsApiKey
@@ -36,6 +36,7 @@ const emptyState = document.getElementById('empty-state');
 const nextPickCopy = document.getElementById('next-pick-copy');
 const getRecommendationBtn = document.getElementById('get-recommendation-btn');
 const homeRecommendations = document.getElementById('home-recommendations');
+const recommendationHistory = document.getElementById('recommendation-history');
 
 const navItems = document.querySelectorAll('.nav-item');
 const appViews = document.querySelectorAll('.app-view');
@@ -416,7 +417,38 @@ async function handleSave(status) {
     };
 
     try {
-        await addDoc(collection(db, "saved_places"), payload);
+        const existing = selectedPlace.id ? selectedPlace : findExistingPlace(payload);
+        if (existing) {
+            if (status === 'visited' && ['wishlist', 'recommended', 'dismissed'].includes(existing.status)) {
+                await updateDoc(doc(db, "saved_places", existing.id), payload);
+                showToast(existing.status === 'wishlist' ? 'Wishlist item converted to visit.' : 'Recommendation converted to visit.', 'success');
+            } else if (status === 'wishlist' && (!existing.status || existing.status === 'visited')) {
+                showToast('You already logged this place.', 'info');
+                btn.disabled = false;
+                btn.textContent = originalText;
+                return;
+            } else if (status === 'wishlist' && existing.status === 'wishlist') {
+                showToast('That place is already on your wishlist.', 'info');
+                btn.disabled = false;
+                btn.textContent = originalText;
+                return;
+            } else if (status === 'wishlist' && ['recommended', 'dismissed'].includes(existing.status)) {
+                await updateDoc(doc(db, "saved_places", existing.id), payload);
+                showToast('Added to Wishlist!', 'success');
+            } else if (existing.status === 'dismissed') {
+                await deleteDoc(doc(db, "saved_places", existing.id));
+                await addDoc(collection(db, "saved_places"), payload);
+                showToast(status === 'visited' ? 'Visit saved!' : 'Added to Wishlist!', 'success');
+            } else {
+                showToast('That place is already saved.', 'info');
+                btn.disabled = false;
+                btn.textContent = originalText;
+                return;
+            }
+        } else {
+            await addDoc(collection(db, "saved_places"), payload);
+            showToast(status === 'visited' ? 'Visit saved!' : 'Added to Wishlist!', 'success');
+        }
 
         // Reset form
         searchInput.value = '';
@@ -430,10 +462,6 @@ async function handleSave(status) {
         btn.textContent = originalText;
         updateSaveBtn();
 
-        showToast(status === 'visited' ? 'Visit saved! 🎉' : 'Added to Wishlist! 🔖', 'success');
-        
-        // If we saved a wishlist item, maybe switch to wishlist view?
-        // switchView('wishlist'); 
     } catch (e) {
         console.error("Error saving:", e);
         btn.disabled = false;
@@ -466,8 +494,26 @@ function listenToHistory() {
     });
 }
 
+function findExistingPlace(place, statuses = ['visited', 'wishlist', 'dismissed', undefined, null]) {
+    return allPlaces.find(saved => {
+        if (!statuses.includes(saved.status)) return false;
+        return isSamePlace(saved, place);
+    }) || null;
+}
+
+function isSamePlace(a, b) {
+    if (!a || !b) return false;
+    if (a.place_id && b.place_id && a.place_id === b.place_id) return true;
+    return normalizePlaceName(a.name) === normalizePlaceName(b.name)
+        && normalizePlaceName(a.address || '') === normalizePlaceName(b.address || '');
+}
+
+function normalizePlaceName(value) {
+    return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
 function updateViews() {
-    const visiblePlaces = allPlaces.filter(p => p.status !== 'dismissed');
+    const visiblePlaces = allPlaces.filter(p => !['dismissed', 'recommended'].includes(p.status));
     const visited = visiblePlaces.filter(p => !p.status || p.status === 'visited');
     const wishlist = allPlaces.filter(p => p.status === 'wishlist');
 
@@ -475,6 +521,7 @@ function updateViews() {
     renderWishlist(wishlist);
     renderProfile(allPlaces);
     renderRecommendationPrompt(visited, wishlist);
+    renderRecommendationHistory();
     
     if (map) {
         updateMarkers();
@@ -575,6 +622,44 @@ function renderRecommendationPrompt(visited, wishlist) {
     }
 }
 
+function renderRecommendationHistory() {
+    if (!recommendationHistory) return;
+
+    const recs = allPlaces
+        .filter(place => place.source === 'ai_recommendation')
+        .sort((a, b) => getPlaceTime(b) - getPlaceTime(a))
+        .slice(0, 5);
+
+    if (recs.length === 0) {
+        recommendationHistory.innerHTML = '';
+        return;
+    }
+
+    recommendationHistory.innerHTML = `
+        <div class="recommendation-history-title">Recent Suggestions</div>
+        ${recs.map(place => `
+            <div class="recommendation-history-item">
+                <span>${escapeHtml(place.name)}</span>
+                <strong>${escapeHtml(getRecommendationStatusLabel(place.status))}</strong>
+            </div>
+        `).join('')}
+    `;
+}
+
+function getRecommendationStatusLabel(status) {
+    if (status === 'wishlist') return 'Want to go';
+    if (status === 'visited') return 'Tried';
+    if (status === 'dismissed') return 'Not for me';
+    return 'Suggested';
+}
+
+function getPlaceTime(place) {
+    const ts = place.acted_at || place.recommended_at || place.visited_at;
+    if (ts?.toMillis) return ts.toMillis();
+    if (ts?.toDate) return ts.toDate().getTime();
+    return 0;
+}
+
 function renderWishlistCards(places) {
     const empty = wishlistSection.querySelector('.empty-state');
     if (places.length === 0) {
@@ -638,6 +723,7 @@ async function handleHomeRecommendations() {
             return;
         }
 
+        await recordRecommendations(result.recommendations, 'home');
         homeRecommendations.innerHTML = renderRecommendationCardsHtml(result.recommendations, 'home');
     } catch (e) {
         console.error("Home recommendation error:", e);
@@ -693,6 +779,35 @@ function renderRecommendationCardsHtml(recommendations, surface) {
     }).join('');
 }
 
+async function recordRecommendations(recommendations, surface) {
+    if (!currentUser) return;
+
+    const writes = recommendations.map(async rec => {
+        const place = recommendationToPlace(rec);
+        const existing = findExistingPlace(place, ['visited', 'wishlist', 'dismissed', 'recommended', undefined, null]);
+        if (existing) {
+            rec.saved_place_id = existing.id;
+            return;
+        }
+
+        const docRef = await addDoc(collection(db, "saved_places"), {
+            ...place,
+            user_rating: null,
+            tags: place.types || [],
+            notes: rec.reasoning || '',
+            status: 'recommended',
+            source: 'ai_recommendation',
+            recommendation_surface: surface,
+            recommended_at: serverTimestamp(),
+            visited_at: serverTimestamp(),
+            uid: currentUser.uid
+        });
+        rec.saved_place_id = docRef.id;
+    });
+
+    await Promise.all(writes);
+}
+
 function storeRecommendation(rec) {
     const key = rec.place_id || `${rec.name || 'unknown'}|${rec.address || ''}`;
     recommendationCache.set(key, rec);
@@ -703,7 +818,11 @@ async function handleRecommendationAction(rec, action, btn) {
     if (!currentUser) return;
 
     if (action === 'visited') {
-        selectedPlace = recommendationToPlace(rec);
+        selectedPlace = {
+            ...recommendationToPlace(rec),
+            id: rec.saved_place_id || null,
+            status: rec.saved_place_id ? 'recommended' : null
+        };
         searchInput.value = rec.name || '';
         switchView('feed');
         closeAiModal();
@@ -731,26 +850,34 @@ async function handleRecommendationAction(rec, action, btn) {
 
 async function saveRecommendation(rec, status) {
     const place = recommendationToPlace(rec);
-    const duplicate = allPlaces.find(p => {
-        if (p.status === 'dismissed' && status === 'wishlist') return false;
-        return (place.place_id && p.place_id === place.place_id) || (!place.place_id && p.name === place.name && p.address === place.address);
-    });
+    const duplicate = findExistingPlace(place, ['visited', 'wishlist', 'dismissed', 'recommended', undefined, null]);
+    const targetId = rec.saved_place_id || duplicate?.id;
 
-    if (duplicate && status === 'wishlist') {
-        showToast('That place is already saved.', 'info');
+    if (duplicate && status === 'wishlist' && (!duplicate.status || duplicate.status === 'visited')) {
+        showToast('You already logged this place.', 'info');
         return;
     }
 
-    await addDoc(collection(db, "saved_places"), {
+    const payload = {
         ...place,
         user_rating: null,
         tags: place.types || [],
         notes: rec.reasoning || '',
         status,
         source: 'ai_recommendation',
+        acted_at: serverTimestamp(),
         visited_at: serverTimestamp(),
         uid: currentUser.uid
-    });
+    };
+
+    if (targetId) {
+        await updateDoc(doc(db, "saved_places", targetId), payload);
+    } else {
+        await addDoc(collection(db, "saved_places"), {
+            ...payload,
+            recommended_at: serverTimestamp()
+        });
+    }
 }
 
 function recommendationToPlace(rec) {
@@ -846,7 +973,7 @@ function updateMarkers() {
     markers.forEach(m => m.setMap(null));
     markers = [];
 
-    const placesToPlot = (showCircleMap ? circlePlaces : allPlaces).filter(place => place.status !== 'dismissed');
+    const placesToPlot = (showCircleMap ? circlePlaces : allPlaces).filter(place => !['dismissed', 'recommended'].includes(place.status));
 
     placesToPlot.forEach(place => {
         if (!place.lat || !place.lng) return;
@@ -1110,6 +1237,7 @@ async function handleConciergeChat(userText) {
         // Build HTML for the AI recommendations if returned
         let recsHtml = '';
         if (data.recommendations && data.recommendations.length > 0) {
+            await recordRecommendations(data.recommendations, 'chat');
             recsHtml = `<div class="recs-wrapper">${renderRecommendationCardsHtml(data.recommendations, 'chat')}</div>`;
         }
 

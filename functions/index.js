@@ -30,6 +30,7 @@ exports.recommend = onCall({ secrets: [geminiApiKey, mapsApiKey], cors: true, in
         const visits = [];
         const wishlist = [];
         const dismissed = [];
+        const recommended = [];
         
         snapshot.forEach(doc => {
             const data = doc.data();
@@ -39,6 +40,8 @@ exports.recommend = onCall({ secrets: [geminiApiKey, mapsApiKey], cors: true, in
                 wishlist.push(data);
             } else if (data.status === 'dismissed') {
                 dismissed.push(data);
+            } else if (data.status === 'recommended') {
+                recommended.push(data);
             }
         });
 
@@ -74,6 +77,7 @@ exports.recommend = onCall({ secrets: [geminiApiKey, mapsApiKey], cors: true, in
 
         const wishlistSummary = wishlist.map(w => `${w.name} (${(w.tags || []).join(", ") || "no tags"})`).slice(0, 10);
         const dismissedSummary = dismissed.map(d => d.name).slice(0, 20);
+        const recentRecommendedSummary = recommended.map(r => r.name).slice(0, 20);
 
         const locationContext = lat && lng
             ? `The user is currently located at latitude ${lat}, longitude ${lng}. Prioritize recommendations near this location.`
@@ -109,6 +113,7 @@ DO NOT RECOMMEND:
 - Already visited: ${visits.map(v => v.name).join(", ") || "None"}
 - Already wishlisted: ${wishlist.map(v => v.name).join(", ") || "None"}
 - Marked not interested: ${dismissedSummary.join(", ") || "None"}
+- Recently suggested: ${recentRecommendedSummary.join(", ") || "None"}
 
 RULES:
 1. Respond to the user's latest query or selected mood in a warm, helpful conversational tone.
