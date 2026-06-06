@@ -598,6 +598,22 @@ function renderCardActions(name, lat, lng) {
     `;
 }
 
+function cleanVisitNotes(notes) {
+    if (!notes) return '';
+    const trimmed = notes.trim();
+    if (trimmed.startsWith('Ate:') && trimmed.includes(' | ')) {
+        const parts = trimmed.split(' | ');
+        const cleanParts = parts.filter(part => {
+            const p = part.trim();
+            return !p.startsWith('Ate:') && !p.startsWith('Total:');
+        });
+        if (cleanParts.length > 0) {
+            return cleanParts.join(' | ').trim();
+        }
+    }
+    return notes;
+}
+
 function renderHistoryFeed() {
     historySection.querySelectorAll('.visit-card').forEach(c => c.remove());
 
@@ -687,7 +703,7 @@ function renderHistoryFeed() {
             </div>
             ${stars ? `<div class="visit-card-stars">${stars}</div>` : ''}
             ${orderHtmlString}
-            ${visit.notes ? `<p class="visit-card-notes">${escapeHtml(visit.notes)}</p>` : ''}
+            ${visit.notes ? `<p class="visit-card-notes">${escapeHtml(cleanVisitNotes(visit.notes))}</p>` : ''}
             ${tagsHtml ? `<div class="visit-card-tags">${tagsHtml}</div>` : ''}
             ${renderCardActions(visit.name, visit.lat, visit.lng)}
         `;
@@ -1778,7 +1794,7 @@ if ('serviceWorker' in navigator) {
             window.location.reload();
         });
 
-        navigator.serviceWorker.register('/sw.js?v=12')
+        navigator.serviceWorker.register('/sw.js?v=13')
             .then(reg => {
                 console.log('Service Worker registered successfully.', reg.scope);
                 reg.update();
