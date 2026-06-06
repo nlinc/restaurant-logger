@@ -577,23 +577,26 @@ function updateViews() {
     }
 }
 
-function renderCardActions(name, lat, lng) {
+function renderCardActions(name, lat, lng, placeId = '', address = '') {
+    const queryText = [name, address].filter(Boolean).join(' ');
+    const encodedQuery = encodeURIComponent(queryText || name);
     const encodedName = encodeURIComponent(name);
-    const mapsQuery = lat && lng ? `${lat},${lng}` : encodedName;
-    const mapsLink = `<a href="https://www.google.com/maps/search/?api=1&query=${mapsQuery}" target="_blank" class="action-link primary-action" title="Open in Maps">Get me there</a>`;
-    let uberLink = '';
+    const encodedPlaceId = placeId ? encodeURIComponent(placeId) : '';
+    const directionsDestination = lat && lng ? `${lat},${lng}` : encodedQuery;
+    const directionsPlaceParam = encodedPlaceId ? `&destination_place_id=${encodedPlaceId}` : '';
+    const placeIdParam = encodedPlaceId ? `&query_place_id=${encodedPlaceId}` : '';
+    const mapsLink = `<a href="https://www.google.com/maps/dir/?api=1&destination=${directionsDestination}${directionsPlaceParam}" target="_blank" class="action-link primary-action" title="Open directions in Maps">Get me there</a>`;
+    const bookingLink = `<a href="https://www.google.com/maps/search/?api=1&query=${encodedQuery}${placeIdParam}" target="_blank" class="action-link booking-action" title="Open booking options in Maps">Reserve</a>`;
+    let lyftLink = '';
     if (lat && lng) {
-        uberLink = `<a href="https://m.uber.com/ul/?action=setPickup&dropoff[latitude]=${lat}&dropoff[longitude]=${lng}&dropoff[nickname]=${encodedName}" target="_blank" class="action-link" title="Uber to restaurant">🚗 Uber</a>`;
+        lyftLink = `<a href="https://www.lyft.com/rider/routes?destination=${lat}%2C${lng}&destination_name=${encodedName}" target="_blank" class="action-link" title="Open Lyft to restaurant">🚗 Lyft</a>`;
     }
-    const resyLink = `<a href="https://resy.com/search?query=${encodedName}" target="_blank" class="action-link" title="Search on Resy">🍷 Resy</a>`;
-    const otLink = `<a href="https://www.opentable.com/s?searchTerm=${encodedName}" target="_blank" class="action-link" title="Search on OpenTable">🍽️ OpenTable</a>`;
     
     return `
         <div class="visit-card-actions">
             ${mapsLink}
-            ${resyLink}
-            ${otLink}
-            ${uberLink}
+            ${bookingLink}
+            ${lyftLink}
         </div>
     `;
 }
@@ -742,7 +745,7 @@ function renderHistoryFeed() {
             ${orderHtmlString}
             ${visit.notes ? `<p class="visit-card-notes">${escapeHtml(cleanVisitNotes(visit.notes))}</p>` : ''}
             ${tagsHtml ? `<div class="visit-card-tags">${tagsHtml}</div>` : ''}
-            ${renderCardActions(visit.name, visit.lat, visit.lng)}
+            ${renderCardActions(visit.name, visit.lat, visit.lng, visit.place_id, visit.address)}
         `;
 
         historySection.appendChild(card);
@@ -862,7 +865,7 @@ function renderWishlistCards(places) {
             ${meta ? `<div class="visit-card-stars" style="color: var(--text-muted); font-size: 0.75rem;">${meta}</div>` : ''}
             ${place.notes ? `<p class="visit-card-notes">${escapeHtml(place.notes)}</p>` : ''}
             ${tagsHtml ? `<div class="visit-card-tags">${tagsHtml}</div>` : ''}
-            ${renderCardActions(place.name, place.lat, place.lng)}
+            ${renderCardActions(place.name, place.lat, place.lng, place.place_id, place.address)}
         `;
 
         card.querySelector('.log-this-btn').addEventListener('click', () => {
@@ -927,7 +930,7 @@ function renderRecommendationCardsHtml(recommendations, surface) {
         const stars = rec.google_rating ? `⭐ ${rec.google_rating}` : '';
         const openStatus = rec.is_open_now === true ? '🟢 Open now' : rec.is_open_now === false ? '🟡 Closed now' : '';
         const verified = rec.verified ? '✓ Verified' : '';
-        const bookLinks = renderCardActions(rec.name, rec.lat, rec.lng);
+        const bookLinks = renderCardActions(rec.name, rec.lat, rec.lng, rec.place_id, rec.address);
 
         return `
             <div class="ai-rec-card ${surface === 'home' ? 'home-rec-card' : ''}" data-rec-card="${encodedKey}">
@@ -1831,7 +1834,7 @@ if ('serviceWorker' in navigator) {
             window.location.reload();
         });
 
-        navigator.serviceWorker.register('/sw.js?v=14')
+        navigator.serviceWorker.register('/sw.js?v=15')
             .then(reg => {
                 console.log('Service Worker registered successfully.', reg.scope);
                 reg.update();

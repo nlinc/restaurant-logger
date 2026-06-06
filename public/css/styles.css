@@ -1282,6 +1282,12 @@ body {
   color: #c9e3d6;
 }
 
+.action-link.booking-action {
+  background: rgba(232, 178, 72, 0.16);
+  border-color: rgba(232, 178, 72, 0.36);
+  color: #f7d78a;
+}
+
 .action-link:hover {
   background: var(--bg-glass-hover);
   border-color: var(--border-focus);
@@ -1664,4 +1670,3 @@ body {
 .legend-item .dot.sky { background: #91b7c7; }
 .legend-item .dot.pine { background: #5f8f7a; }
 .legend-item .dot.purple { background: #a78bfa; }
-
