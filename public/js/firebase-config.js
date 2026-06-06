@@ -25,4 +25,4 @@ googleProvider.setCustomParameters({
   prompt: "select_account"
 });
 
-export { collection, addDoc, doc, updateDoc, getDoc, serverTimestamp, query, where, orderBy, limit, onSnapshot, getDocs, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, httpsCallable, mapsApiKey };
+export { collection, addDoc, doc, updateDoc, getDoc, serverTimestamp, query, where, orderBy, limit, onSnapshot, getDocs, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, httpsCallable };
