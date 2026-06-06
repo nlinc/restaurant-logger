@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lincoln-eats-v6';
+const CACHE_NAME = 'lincoln-eats-v7';
 const ASSETS = [
   '/',
   '/index.html',
@@ -36,7 +36,7 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-// Fetch: Stale-While-Revalidate caching pattern
+// Fetch: Network-first for app shell files so phones pick up new deploys quickly.
 self.addEventListener('fetch', (e) => {
   // Only handle local GET requests
   const url = new URL(e.request.url);
@@ -44,19 +44,46 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
+  const isAppShellRequest =
+    e.request.mode === 'navigate' ||
+    ASSETS.includes(url.pathname) ||
+    url.pathname.endsWith('.js') ||
+    url.pathname.endsWith('.css') ||
+    url.pathname.endsWith('.json');
+
   e.respondWith(
-    caches.match(e.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        // Update cache in the background
-        fetch(e.request).then((networkResponse) => {
+    (async () => {
+      const cache = await caches.open(CACHE_NAME);
+
+      if (isAppShellRequest) {
+        try {
+          const networkResponse = await fetch(e.request);
           if (networkResponse.status === 200) {
-            caches.open(CACHE_NAME).then((cache) => cache.put(e.request, networkResponse));
+            cache.put(e.request, networkResponse.clone());
           }
-        }).catch(() => {/* offline fallback */});
-        
-        return cachedResponse;
+          return networkResponse;
+        } catch (err) {
+          const cachedResponse = await caches.match(e.request);
+          if (cachedResponse) return cachedResponse;
+          if (e.request.mode === 'navigate') return caches.match('/index.html');
+          throw err;
+        }
       }
-      return fetch(e.request);
-    })
+
+      const cachedResponse = await caches.match(e.request);
+      if (cachedResponse) return cachedResponse;
+
+      const networkResponse = await fetch(e.request);
+      if (networkResponse.status === 200) {
+        cache.put(e.request, networkResponse.clone());
+      }
+      return networkResponse;
+    })()
   );
+});
+
+self.addEventListener('message', (e) => {
+  if (e.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
