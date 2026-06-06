@@ -7,7 +7,7 @@
     <title>Lincoln Eats — Restaurant Logger</title>
     <meta name="description" content="Log your restaurant visits, rate your favorites, and get AI-powered dining recommendations based on your taste profile.">
     <meta name="theme-color" content="#0a0a0a">
-    <link rel="stylesheet" href="css/styles.css?v=10">
+    <link rel="stylesheet" href="css/styles.css?v=11">
     <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
     
     <!-- PWA Configurations -->
@@ -105,14 +105,15 @@
                 <div id="recommendation-history" class="recommendation-history"></div>
             </section>
 
-            <!-- Circle Activity Section -->
-            <section class="circle-activity-section" id="circle-activity-section" style="display: none; margin-bottom: 1.5rem;">
-                <p class="section-title">Circle Activity</p>
-                <div id="circle-activity-feed" class="circle-activity-feed" style="display: flex; flex-direction: column; gap: 0.6rem;"></div>
-            </section>
-
-            <!-- History -->
-            <p class="section-title">Your History</p>
+            <!-- Combined History / Activity Feed -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; margin-top: 1.5rem;">
+                <p class="section-title" style="margin-bottom: 0;" id="history-section-title">Activity Feed</p>
+                <div class="feed-filters" id="feed-filters" style="display: none; gap: 0.35rem;">
+                    <button class="filter-chip active" data-feed-filter="all">All Feed</button>
+                    <button class="filter-chip" data-feed-filter="me">Just Me</button>
+                    <button class="filter-chip" data-feed-filter="circle">Circle</button>
+                </div>
+            </div>
             <section class="history-section" id="history-section">
                 <div class="empty-state" id="empty-state">
                     <span class="icon">📍</span>
@@ -239,7 +240,7 @@
         });
     </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script type="module" src="js/app.js?v=10"></script>
+    <script type="module" src="js/app.js?v=11"></script>
 </body>
 
 </html>

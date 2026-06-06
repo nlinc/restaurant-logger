@@ -66,6 +66,7 @@ let markers = [];
 let allPlaces = [];
 let currentView = 'feed';
 let historyUnsubscribe = null;
+let currentFeedFilter = 'all';
 let tasteRadarChart = null;
 let aiChatHistoryData = [];
 let currentCircle = null;
@@ -186,6 +187,20 @@ document.querySelectorAll('.filter-chip').forEach(chip => {
         const filter = chip.dataset.filter;
         renderWishlist(allPlaces.filter(p => p.status === 'wishlist'), filter);
     });
+});
+
+// Bind Feed Filter Chips
+document.addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-feed-filter]');
+    if (!chip) return;
+
+    const filterContainer = document.getElementById('feed-filters');
+    if (filterContainer) {
+        filterContainer.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+    }
+    chip.classList.add('active');
+    currentFeedFilter = chip.dataset.feedFilter;
+    renderHistoryFeed();
 });
 
 function switchView(viewId) {
@@ -548,7 +563,13 @@ function updateViews() {
     const visited = visiblePlaces.filter(p => !p.status || p.status === 'visited');
     const wishlist = allPlaces.filter(p => p.status === 'wishlist');
 
-    renderHistory(visited);
+    // Toggle feed filters visibility based on circle membership
+    const filterContainer = document.getElementById('feed-filters');
+    if (filterContainer) {
+        filterContainer.style.display = currentCircle ? 'flex' : 'none';
+    }
+
+    renderHistoryFeed();
     renderWishlist(wishlist);
     renderProfile(allPlaces);
     renderRecommendationPrompt(visited, wishlist);
@@ -580,8 +601,37 @@ function renderCardActions(name, lat, lng) {
     `;
 }
 
-function renderHistory(visits) {
+function renderHistoryFeed() {
     historySection.querySelectorAll('.visit-card').forEach(c => c.remove());
+
+    const myVisits = allPlaces.filter(p => (!p.status || p.status === 'visited') && p.uid === currentUser.uid);
+    const circleVisits = circlePlaces.filter(p => (!p.status || p.status === 'visited') && p.uid);
+
+    const mergedMap = new Map();
+    
+    // Add all circle visits
+    circleVisits.forEach(p => {
+        mergedMap.set(p.id, p);
+    });
+    
+    // Add all personal visits (overriding so it's marked as mine)
+    myVisits.forEach(p => {
+        mergedMap.set(p.id, p);
+    });
+    
+    let visits = Array.from(mergedMap.values());
+
+    // Filter based on active pill
+    if (currentCircle) {
+        if (currentFeedFilter === 'me') {
+            visits = visits.filter(p => p.uid === currentUser.uid);
+        } else if (currentFeedFilter === 'circle') {
+            visits = visits.filter(p => p.uid !== currentUser.uid);
+        }
+    }
+
+    // Sort by date
+    visits.sort((a, b) => getPlaceTime(b) - getPlaceTime(a));
 
     if (visits.length === 0) {
         emptyState.style.display = 'block';
@@ -594,15 +644,36 @@ function renderHistory(visits) {
         const card = document.createElement('div');
         card.className = 'visit-card';
 
+        const isMine = visit.uid === currentUser.uid;
+        const memberName = isMine ? 'You' : (currentCircle?.membersInfo?.[visit.uid]?.displayName || 'Friend');
+        const memberPhoto = isMine ? (currentUser.photoURL || '') : (currentCircle?.membersInfo?.[visit.uid]?.photoURL || '');
+        
+        let memberHeaderHtml = '';
+        if (currentCircle) {
+            memberHeaderHtml = `
+                <div style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.03); padding-bottom: 0.35rem;">
+                    ${memberPhoto ? `<img src="${memberPhoto}" alt="${escapeHtml(memberName)}" style="width: 16px; height: 16px; border-radius: 50%;">` : '<span style="font-size: 0.7rem;">👤</span>'}
+                    <strong style="color: var(--text-primary);">${escapeHtml(memberName)}</strong>
+                    <span>visited</span>
+                </div>
+            `;
+        }
+
         const stars = renderCategoryBadge(visit.user_rating);
         const date = visit.visited_at?.toDate ? formatDate(visit.visited_at.toDate()) : '';
         const tagsHtml = (visit.tags || []).map(t => `<span class="visit-tag">${escapeHtml(t)}</span>`).join('');
         const orderItems = Array.isArray(visit.order_items) ? visit.order_items.filter(Boolean) : [];
         const orderHtml = orderItems.length ? `<p class="visit-card-order">Ate: ${escapeHtml(orderItems.join(', '))}</p>` : '';
-        const visitStats = getRestaurantVisitStats(visit);
-        const repeatHtml = visitStats.count > 1 ? `<span class="visit-count-pill">${visitStats.count} visits</span>` : '';
+        
+        // Stats are only relevant for personal visits
+        let repeatHtml = '';
+        if (isMine) {
+            const visitStats = getRestaurantVisitStats(visit);
+            repeatHtml = visitStats.count > 1 ? `<span class="visit-count-pill">${visitStats.count} visits</span>` : '';
+        }
 
         card.innerHTML = `
+            ${memberHeaderHtml}
             <div class="visit-card-header">
                 <span class="visit-card-name">${escapeHtml(visit.name)}</span>
                 <div class="visit-card-meta">
@@ -1393,7 +1464,7 @@ function listenToCircle() {
         if (snapshot.empty) {
             currentCircle = null;
             renderCirclesUI();
-            renderCircleActivity();
+            renderHistoryFeed();
             if (circlePlacesUnsubscribe) {
                 circlePlacesUnsubscribe();
                 circlePlacesUnsubscribe = null;
@@ -1429,7 +1500,7 @@ function listenToCirclePlaces() {
 
         updateMarkers();
         renderCirclesUI();
-        renderCircleActivity();
+        renderHistoryFeed();
     }, (error) => {
         console.error("Circle places listener error:", error);
     });
@@ -1529,53 +1600,7 @@ function renderCirclesUI() {
     }
 }
 
-function renderCircleActivity() {
-    const section = document.getElementById('circle-activity-section');
-    const feed = document.getElementById('circle-activity-feed');
-    if (!section || !feed) return;
-
-    if (!currentCircle) {
-        section.style.display = 'none';
-        return;
-    }
-
-    const recentVisits = circlePlaces
-        .filter(p => (!p.status || p.status === 'visited') && p.uid)
-        .sort((a, b) => getPlaceTime(b) - getPlaceTime(a))
-        .slice(0, 10);
-
-    if (recentVisits.length > 0) {
-        feed.innerHTML = recentVisits.map(visit => {
-            const memberName = currentCircle.membersInfo?.[visit.uid]?.displayName || 'A Friend';
-            const memberPhoto = currentCircle.membersInfo?.[visit.uid]?.photoURL || 'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg';
-            const ratingLabel = renderCategoryBadge(visit.user_rating);
-            const dateStr = visit.visited_at?.toDate ? formatDate(visit.visited_at.toDate()) : '';
-            return `
-                <div class="circle-activity-item" style="background: rgba(255, 255, 255, 0.025); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.65rem 0.85rem; display: flex; flex-direction: column; gap: 0.25rem;">
-                    <div style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: var(--text-muted);">
-                        <img src="${memberPhoto}" alt="${escapeHtml(memberName)}" style="width: 18px; height: 18px; border-radius: 50%;">
-                        <strong style="color: var(--text-primary);">${escapeHtml(memberName)}</strong>
-                        <span>visited</span>
-                        <span style="margin-left: auto;">${dateStr}</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.15rem;">
-                        <span style="font-weight: 600; font-size: 0.88rem; color: var(--text-primary);">${escapeHtml(visit.name)}</span>
-                        <span style="font-size: 0.72rem; color: var(--accent); font-weight: 500;">${ratingLabel}</span>
-                    </div>
-                    ${visit.notes ? `<p style="margin: 0; font-size: 0.78rem; color: var(--text-secondary); line-height: 1.35; margin-top: 0.1rem;">${escapeHtml(visit.notes)}</p>` : ''}
-                </div>
-            `;
-        }).join('');
-        section.style.display = 'block';
-    } else {
-        feed.innerHTML = `
-            <div style="text-align: center; padding: 1.5rem; color: var(--text-muted); font-size: 0.8rem; border: 1px dashed var(--border); border-radius: var(--radius-md);">
-                No circle activity logged yet. Share your code to invite friends!
-            </div>
-        `;
-        section.style.display = 'block';
-    }
-}
+// renderCircleActivity removed - combined into renderHistoryFeed
 
 async function handleCreateCircle() {
     const nameInput = document.getElementById('create-circle-name');
@@ -1749,7 +1774,7 @@ if ('serviceWorker' in navigator) {
             window.location.reload();
         });
 
-        navigator.serviceWorker.register('/sw.js?v=10')
+        navigator.serviceWorker.register('/sw.js?v=11')
             .then(reg => {
                 console.log('Service Worker registered successfully.', reg.scope);
                 reg.update();
