@@ -29,6 +29,7 @@ exports.recommend = onCall({ secrets: [geminiApiKey, mapsApiKey], cors: true, in
 
         const visits = [];
         const wishlist = [];
+        const dismissed = [];
         
         snapshot.forEach(doc => {
             const data = doc.data();
@@ -36,6 +37,8 @@ exports.recommend = onCall({ secrets: [geminiApiKey, mapsApiKey], cors: true, in
                 visits.push(data);
             } else if (data.status === 'wishlist') {
                 wishlist.push(data);
+            } else if (data.status === 'dismissed') {
+                dismissed.push(data);
             }
         });
 
@@ -70,6 +73,7 @@ exports.recommend = onCall({ secrets: [geminiApiKey, mapsApiKey], cors: true, in
             .map(([type]) => type);
 
         const wishlistSummary = wishlist.map(w => `${w.name} (${(w.tags || []).join(", ") || "no tags"})`).slice(0, 10);
+        const dismissedSummary = dismissed.map(d => d.name).slice(0, 20);
 
         const locationContext = lat && lng
             ? `The user is currently located at latitude ${lat}, longitude ${lng}. Prioritize recommendations near this location.`
@@ -101,8 +105,10 @@ ${wishlistSummary.join("; ") || "None yet"}
 
 ${locationContext}
 
-ALREADY VISITED (do NOT recommend these):
-${visits.map(v => v.name).join(", ")}
+DO NOT RECOMMEND:
+- Already visited: ${visits.map(v => v.name).join(", ") || "None"}
+- Already wishlisted: ${wishlist.map(v => v.name).join(", ") || "None"}
+- Marked not interested: ${dismissedSummary.join(", ") || "None"}
 
 RULES:
 1. Respond to the user's latest query or selected mood in a warm, helpful conversational tone.
@@ -216,7 +222,7 @@ Return ONLY valid JSON without Markdown formatting brackets.`;
                         // Step 2: Get full details including business_status
                         const detailParams = new URLSearchParams({
                             place_id: placeId,
-                            fields: 'place_id,name,business_status,rating,formatted_address,opening_hours',
+                            fields: 'place_id,name,business_status,rating,formatted_address,opening_hours,geometry,type,price_level',
                             key: apiKey
                         });
 
@@ -236,6 +242,10 @@ Return ONLY valid JSON without Markdown formatting brackets.`;
                             google_rating: place.rating || null,
                             address: place.formatted_address || null,
                             is_open_now: place.opening_hours?.open_now ?? null,
+                            types: place.types || [],
+                            price_level: place.price_level ?? null,
+                            lat: place.geometry?.location?.lat ?? null,
+                            lng: place.geometry?.location?.lng ?? null,
                             place_id: place.place_id
                         });
                     } else {

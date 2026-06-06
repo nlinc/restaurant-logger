@@ -33,6 +33,9 @@ const wishlistSection = document.getElementById('wishlist-section');
 const profileDashboard = document.getElementById('profile-dashboard');
 const wishlistBtn = document.getElementById('wishlist-btn');
 const emptyState = document.getElementById('empty-state');
+const nextPickCopy = document.getElementById('next-pick-copy');
+const getRecommendationBtn = document.getElementById('get-recommendation-btn');
+const homeRecommendations = document.getElementById('home-recommendations');
 
 const navItems = document.querySelectorAll('.nav-item');
 const appViews = document.querySelectorAll('.app-view');
@@ -68,6 +71,7 @@ let circleUnsubscribe = null;
 let circlePlaces = [];
 let circlePlacesUnsubscribe = null;
 let showCircleMap = false;
+const recommendationCache = new Map();
 
 // ===== Auth =====
 googleSignInBtn.addEventListener('click', async () => {
@@ -290,6 +294,18 @@ function updateSaveBtn() {
 
 saveBtn.addEventListener('click', () => handleSave('visited'));
 wishlistBtn.addEventListener('click', () => handleSave('wishlist'));
+getRecommendationBtn.addEventListener('click', handleHomeRecommendations);
+
+document.addEventListener('click', async (e) => {
+    const actionBtn = e.target.closest('[data-rec-action]');
+    if (!actionBtn) return;
+
+    const key = decodeURIComponent(actionBtn.dataset.recKey || '');
+    const rec = recommendationCache.get(key);
+    if (!rec) return;
+
+    await handleRecommendationAction(rec, actionBtn.dataset.recAction, actionBtn);
+});
 
 // ===== Receipt AI Scanner Event Handlers =====
 scanReceiptBtn.addEventListener('click', () => {
@@ -388,8 +404,9 @@ async function handleSave(status) {
     btn.disabled = true;
     btn.textContent = 'Saving...';
 
+    const { id, ...placeData } = selectedPlace;
     const payload = {
-        ...selectedPlace,
+        ...placeData,
         user_rating: status === 'visited' ? getSelectedRating() : null,
         tags: [...tags],
         notes: notesInput.value.trim(),
@@ -450,12 +467,14 @@ function listenToHistory() {
 }
 
 function updateViews() {
-    const visited = allPlaces.filter(p => !p.status || p.status === 'visited');
+    const visiblePlaces = allPlaces.filter(p => p.status !== 'dismissed');
+    const visited = visiblePlaces.filter(p => !p.status || p.status === 'visited');
     const wishlist = allPlaces.filter(p => p.status === 'wishlist');
 
     renderHistory(visited);
     renderWishlist(wishlist);
     renderProfile(allPlaces);
+    renderRecommendationPrompt(visited, wishlist);
     
     if (map) {
         updateMarkers();
@@ -541,6 +560,21 @@ function renderWishlist(places, filter = 'all') {
     renderWishlistCards(filtered);
 }
 
+function renderRecommendationPrompt(visited, wishlist) {
+    if (!nextPickCopy || !getRecommendationBtn) return;
+
+    const signalCount = visited.length + wishlist.length;
+    getRecommendationBtn.disabled = signalCount === 0;
+
+    if (signalCount === 0) {
+        nextPickCopy.textContent = 'Log a few places and Lincoln will start suggesting where to go next.';
+    } else if (visited.length < 3) {
+        nextPickCopy.textContent = 'You have enough signal for a light recommendation. A few more ratings will sharpen it.';
+    } else {
+        nextPickCopy.textContent = 'Ask for a fresh pick based on your saved taste profile.';
+    }
+}
+
 function renderWishlistCards(places) {
     const empty = wishlistSection.querySelector('.empty-state');
     if (places.length === 0) {
@@ -581,6 +615,161 @@ function renderWishlistCards(places) {
 
         wishlistSection.appendChild(card);
     });
+}
+
+async function handleHomeRecommendations() {
+    if (!currentUser || !homeRecommendations) return;
+
+    const originalText = getRecommendationBtn.textContent;
+    getRecommendationBtn.disabled = true;
+    getRecommendationBtn.textContent = 'Thinking...';
+    homeRecommendations.innerHTML = '<div class="inline-loading">Finding a place that fits your taste...</div>';
+
+    try {
+        const pos = await getUserLocation().catch(() => null);
+        const result = await requestRecommendations({
+            message: 'Recommend 3 restaurants I should try next. Favor places I have not visited, explain the match briefly, and include a range of options.',
+            lat: pos?.coords?.latitude || null,
+            lng: pos?.coords?.longitude || null
+        });
+
+        if (!result.recommendations || result.recommendations.length === 0) {
+            homeRecommendations.innerHTML = `<div class="inline-empty">${escapeHtml(result.reply || 'No recommendations yet. Add a few more places and try again.')}</div>`;
+            return;
+        }
+
+        homeRecommendations.innerHTML = renderRecommendationCardsHtml(result.recommendations, 'home');
+    } catch (e) {
+        console.error("Home recommendation error:", e);
+        homeRecommendations.innerHTML = '<div class="inline-empty error">Could not load recommendations. Try again in a bit.</div>';
+    } finally {
+        getRecommendationBtn.disabled = false;
+        getRecommendationBtn.textContent = originalText;
+    }
+}
+
+async function requestRecommendations({ message, lat = null, lng = null }) {
+    const recommend = httpsCallable(functions, 'recommend');
+    const result = await recommend({
+        lat,
+        lng,
+        message,
+        history: aiChatHistoryData
+    });
+    return result.data || {};
+}
+
+function renderRecommendationCardsHtml(recommendations, surface) {
+    return recommendations.map(rec => {
+        const key = storeRecommendation(rec);
+        const encodedKey = encodeURIComponent(key);
+        const stars = rec.google_rating ? `⭐ ${rec.google_rating}` : '';
+        const openStatus = rec.is_open_now === true ? '🟢 Open now' : rec.is_open_now === false ? '🟡 Closed now' : '';
+        const verified = rec.verified ? '✓ Verified' : '';
+        const bookLinks = renderCardActions(rec.name, rec.lat, rec.lng);
+
+        return `
+            <div class="ai-rec-card ${surface === 'home' ? 'home-rec-card' : ''}" data-rec-card="${encodedKey}">
+                <h4>
+                    ${escapeHtml(rec.name)}
+                    ${verified ? `<span class="verified-badge">${verified}</span>` : ''}
+                </h4>
+                <p class="reasoning">${escapeHtml(rec.reasoning || 'Recommended based on your taste profile.')}</p>
+                ${rec.address ? `<p class="rec-address">📍 ${escapeHtml(rec.address)}</p>` : ''}
+                <div class="rec-meta">
+                    ${rec.cuisine ? `<span>🍽 ${escapeHtml(rec.cuisine)}</span>` : ''}
+                    ${rec.price_range ? `<span>💰 ${escapeHtml(rec.price_range)}</span>` : ''}
+                    ${stars ? `<span>${stars}</span>` : ''}
+                    ${openStatus ? `<span>${openStatus}</span>` : ''}
+                </div>
+                <div class="rec-actions">
+                    <button class="rec-feedback-btn primary" data-rec-action="wishlist" data-rec-key="${encodedKey}">Want to go</button>
+                    <button class="rec-feedback-btn" data-rec-action="visited" data-rec-key="${encodedKey}">Tried it</button>
+                    <button class="rec-feedback-btn quiet" data-rec-action="dismissed" data-rec-key="${encodedKey}">Not for me</button>
+                </div>
+                ${bookLinks}
+            </div>
+        `;
+    }).join('');
+}
+
+function storeRecommendation(rec) {
+    const key = rec.place_id || `${rec.name || 'unknown'}|${rec.address || ''}`;
+    recommendationCache.set(key, rec);
+    return key;
+}
+
+async function handleRecommendationAction(rec, action, btn) {
+    if (!currentUser) return;
+
+    if (action === 'visited') {
+        selectedPlace = recommendationToPlace(rec);
+        searchInput.value = rec.name || '';
+        switchView('feed');
+        closeAiModal();
+        updateSaveBtn();
+        showToast('Ready to log. Pick a rating and save.', 'info');
+        return;
+    }
+
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = action === 'wishlist' ? 'Saving...' : 'Noted';
+
+    try {
+        await saveRecommendation(rec, action);
+        const card = btn.closest('[data-rec-card]');
+        if (card) card.classList.add('rec-card-saved');
+        showToast(action === 'wishlist' ? 'Added to wishlist.' : 'Noted for future picks.', 'success');
+    } catch (e) {
+        console.error("Recommendation action error:", e);
+        btn.disabled = false;
+        btn.textContent = originalText;
+        showToast('Could not save that feedback.', 'error');
+    }
+}
+
+async function saveRecommendation(rec, status) {
+    const place = recommendationToPlace(rec);
+    const duplicate = allPlaces.find(p => {
+        if (p.status === 'dismissed' && status === 'wishlist') return false;
+        return (place.place_id && p.place_id === place.place_id) || (!place.place_id && p.name === place.name && p.address === place.address);
+    });
+
+    if (duplicate && status === 'wishlist') {
+        showToast('That place is already saved.', 'info');
+        return;
+    }
+
+    await addDoc(collection(db, "saved_places"), {
+        ...place,
+        user_rating: null,
+        tags: place.types || [],
+        notes: rec.reasoning || '',
+        status,
+        source: 'ai_recommendation',
+        visited_at: serverTimestamp(),
+        uid: currentUser.uid
+    });
+}
+
+function recommendationToPlace(rec) {
+    return {
+        place_id: rec.place_id || null,
+        name: rec.name || 'Recommended place',
+        google_rating: rec.google_rating || null,
+        types: rec.types || (rec.cuisine ? [rec.cuisine.toLowerCase().replace(/\s+/g, '_')] : []),
+        address: rec.address || '',
+        price_level: rec.price_level || priceRangeToLevel(rec.price_range),
+        lat: rec.lat || null,
+        lng: rec.lng || null
+    };
+}
+
+function priceRangeToLevel(priceRange) {
+    if (!priceRange) return null;
+    const dollarCount = (String(priceRange).match(/\$/g) || []).length;
+    return dollarCount || null;
 }
 
 function calculateDistance(lat1, lon1, lat2, lon2) {
@@ -657,7 +846,7 @@ function updateMarkers() {
     markers.forEach(m => m.setMap(null));
     markers = [];
 
-    const placesToPlot = showCircleMap ? circlePlaces : allPlaces;
+    const placesToPlot = (showCircleMap ? circlePlaces : allPlaces).filter(place => place.status !== 'dismissed');
 
     placesToPlot.forEach(place => {
         if (!place.lat || !place.lng) return;
@@ -915,47 +1104,13 @@ async function handleConciergeChat(userText) {
         const lat = pos?.coords?.latitude || null;
         const lng = pos?.coords?.longitude || null;
 
-        // Package up history for the Cloud Function
-        const recommend = httpsCallable(functions, 'recommend');
-        const result = await recommend({
-            lat,
-            lng,
-            message: userText,
-            history: aiChatHistoryData
-        });
-
-        const data = result.data;
+        const data = await requestRecommendations({ message: userText, lat, lng });
         const replyText = data.reply || "Here is what I found for you:";
 
         // Build HTML for the AI recommendations if returned
         let recsHtml = '';
         if (data.recommendations && data.recommendations.length > 0) {
-            recsHtml += `<div class="recs-wrapper" style="margin-top:0.75rem; display:flex; flex-direction:column; gap:0.5rem;">`;
-            data.recommendations.forEach(rec => {
-                const stars = rec.google_rating ? `⭐ ${rec.google_rating}` : '';
-                const openStatus = rec.is_open_now === true ? '🟢 Open now' : rec.is_open_now === false ? '🟡 Closed now' : '';
-                const verified = rec.verified ? '✓ Verified' : '';
-                const bookLinks = renderCardActions(rec.name, lat, lng);
-
-                recsHtml += `
-                    <div class="ai-rec-card" style="margin: 0; background: var(--bg-surface); border: 1px solid var(--border);">
-                        <h4 style="font-size:0.9rem; font-weight:600; margin-bottom:0.25rem;">
-                            ${escapeHtml(rec.name)} 
-                            ${verified ? `<span style="font-size: 0.7rem; color: var(--success); font-weight: 500;">${verified}</span>` : ''}
-                        </h4>
-                        <p class="reasoning" style="font-size:0.78rem; line-height:1.4;">${escapeHtml(rec.reasoning)}</p>
-                        ${rec.address ? `<p style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.25rem;">📍 ${escapeHtml(rec.address)}</p>` : ''}
-                        <div class="rec-meta" style="font-size:0.7rem; margin-top:0.35rem;">
-                            ${rec.cuisine ? `<span>🍽 ${escapeHtml(rec.cuisine)}</span>` : ''}
-                            ${rec.price_range ? `<span>💰 ${escapeHtml(rec.price_range)}</span>` : ''}
-                            ${stars ? `<span>${stars}</span>` : ''}
-                            ${openStatus ? `<span>${openStatus}</span>` : ''}
-                        </div>
-                        ${bookLinks}
-                    </div>
-                `;
-            });
-            recsHtml += `</div>`;
+            recsHtml = `<div class="recs-wrapper">${renderRecommendationCardsHtml(data.recommendations, 'chat')}</div>`;
         }
 
         // Render bot bubble with text + dynamic card recommendations
@@ -1086,13 +1241,9 @@ function listenToCirclePlaces() {
     if (circlePlacesUnsubscribe) circlePlacesUnsubscribe();
     if (!currentCircle) return;
 
-    const memberUids = Object.keys(currentCircle.members);
-    
-    if (memberUids.length === 0) return;
-
     const q = query(
         collection(db, "saved_places"),
-        where("uid", "in", memberUids)
+        where("uid", "==", currentUser.uid)
     );
 
     circlePlacesUnsubscribe = onSnapshot(q, (snapshot) => {

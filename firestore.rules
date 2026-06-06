@@ -1,27 +1,41 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
     
     // Saved Places rules
     match /saved_places/{docId} {
-      // Authenticated users can read restaurant listings (supports collaborative circle maps)
-      allow read: if request.auth != null;
+      // Personal logs and recommendation feedback are private to the owner.
+      allow read: if isOwner(resource.data.uid);
       // Only the owner can create or modify their own logs
-      allow create: if request.auth != null && request.auth.uid == request.resource.data.uid;
-      allow update: if request.auth != null
-        && request.auth.uid == resource.data.uid
+      allow create: if isOwner(request.resource.data.uid);
+      allow update: if isOwner(resource.data.uid)
         && request.resource.data.uid == resource.data.uid;
-      allow delete: if request.auth != null && request.auth.uid == resource.data.uid;
+      allow delete: if isOwner(resource.data.uid);
     }
 
     // Circles rules
     match /circles/{docId} {
-      // Authenticated users can read and create circles
-      allow read, create: if request.auth != null;
-      // Members or owners can update circles (e.g. to join or leave)
-      allow update: if request.auth != null;
-      // Only owners can delete a circle
-      allow delete: if request.auth != null && request.auth.uid == resource.data.owner;
+      // Codes are searchable for joining; membership edits are constrained below.
+      allow read: if isSignedIn();
+      allow create: if isOwner(request.resource.data.owner)
+        && request.resource.data.members[request.auth.uid] == true;
+      allow update: if isSignedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'membersInfo', 'owner'])
+        && (
+          resource.data.members[request.auth.uid] == true
+          || (
+            resource.data.members[request.auth.uid] != true
+            && request.resource.data.members[request.auth.uid] == true
+          )
+        );
+      allow delete: if isOwner(resource.data.owner);
     }
   }
 }

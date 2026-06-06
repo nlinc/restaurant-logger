@@ -69,22 +69,37 @@
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label for="tags-input">Tags</label>
-                    <input type="text" id="tags-input" placeholder="Type a tag and press Enter...">
-                    <div class="tags-container" id="tags-container"></div>
-                </div>
+                <details class="optional-details">
+                    <summary>Details</summary>
+                    <div class="form-group">
+                        <label for="tags-input">Tags</label>
+                        <input type="text" id="tags-input" placeholder="Type a tag and press Enter...">
+                        <div class="tags-container" id="tags-container"></div>
+                    </div>
 
-                <div class="form-group">
-                    <label for="visit-notes">Notes</label>
-                    <textarea id="visit-notes" placeholder="What did you order? Any tips for next time?" rows="2"></textarea>
-                </div>
+                    <div class="form-group">
+                        <label for="visit-notes">Notes</label>
+                        <textarea id="visit-notes" placeholder="What did you order? Any tips for next time?" rows="2"></textarea>
+                    </div>
+                </details>
 
                 <div class="form-actions">
                     <button id="wishlist-btn" class="wishlist-btn" disabled>Add to Wishlist</button>
                     <button id="save-btn" class="save-btn" disabled>Save Visit</button>
                 </div>
             </div>
+
+            <!-- Recommendations -->
+            <section class="next-pick-section" id="next-pick-section">
+                <div class="next-pick-header">
+                    <div>
+                        <p class="section-title" style="margin-bottom: 0.2rem;">Recommended Next</p>
+                        <p class="next-pick-copy" id="next-pick-copy">Log a few places and Lincoln will start suggesting where to go next.</p>
+                    </div>
+                    <button id="get-recommendation-btn" class="small-action-btn">Suggest</button>
+                </div>
+                <div id="home-recommendations" class="recommendation-list"></div>
+            </section>
 
             <!-- History -->
             <p class="section-title">Your History</p>
@@ -115,7 +130,6 @@
             <p class="section-title">Want to Go</p>
             <div class="wishlist-filters">
                 <button class="filter-chip active" data-filter="all">All</button>
-                <button class="filter-chip" data-filter="open">Open Now</button>
                 <button class="filter-chip" data-filter="nearby">Nearby</button>
             </div>
             <section class="wishlist-section" id="wishlist-section">
