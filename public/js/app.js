@@ -1753,7 +1753,7 @@ if ('serviceWorker' in navigator) {
             window.location.reload();
         });
 
-        navigator.serviceWorker.register('/sw.js')
+        navigator.serviceWorker.register('/sw.js?v=8')
             .then(reg => {
                 console.log('Service Worker registered successfully.', reg.scope);
                 reg.update();
