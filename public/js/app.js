@@ -1,9 +1,9 @@
 // Lincoln Eats — App Logic
 import {
     db, auth, functions, googleProvider,
-    collection, addDoc, doc, updateDoc, getDoc, serverTimestamp,
-    query, where, orderBy, limit, onSnapshot,
-    signInWithPopup, signOut, onAuthStateChanged,
+    collection, addDoc, doc, updateDoc, serverTimestamp,
+    query, where, orderBy, limit, onSnapshot, getDocs,
+    signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged,
     httpsCallable, mapsApiKey
 } from './firebase-config.js';
 
@@ -23,7 +23,6 @@ const signOutDropdown = document.getElementById('sign-out-dropdown');
 const signOutBtn = document.getElementById('sign-out-btn');
 
 const searchInput = document.getElementById('restaurant-search');
-const starRating = document.getElementById('star-rating');
 const tagsInput = document.getElementById('tags-input');
 const tagsContainer = document.getElementById('tags-container');
 const notesInput = document.getElementById('visit-notes');
@@ -72,13 +71,51 @@ let showCircleMap = false;
 
 // ===== Auth =====
 googleSignInBtn.addEventListener('click', async () => {
+    const originalHtml = googleSignInBtn.innerHTML;
+    googleSignInBtn.disabled = true;
+    googleSignInBtn.textContent = 'Signing in...';
+
     try {
         await signInWithPopup(auth, googleProvider);
     } catch (e) {
         console.error('Sign-in error:', e);
-        showToast('Sign-in failed. Please try again.', 'error');
+        if (shouldUseRedirectSignIn(e)) {
+            showToast('Opening Google sign-in...', 'info');
+            await signInWithRedirect(auth, googleProvider);
+            return;
+        }
+
+        showToast(getAuthErrorMessage(e), 'error');
+    } finally {
+        googleSignInBtn.disabled = false;
+        googleSignInBtn.innerHTML = originalHtml;
     }
 });
+
+getRedirectResult(auth).catch((e) => {
+    console.error('Redirect sign-in error:', e);
+    showToast(getAuthErrorMessage(e), 'error');
+});
+
+function shouldUseRedirectSignIn(error) {
+    return [
+        'auth/popup-blocked',
+        'auth/operation-not-supported-in-this-environment'
+    ].includes(error?.code);
+}
+
+function getAuthErrorMessage(error) {
+    if (error?.code === 'auth/unauthorized-domain') {
+        return 'This domain is not authorized for Firebase Google sign-in.';
+    }
+    if (error?.code === 'auth/network-request-failed') {
+        return 'Network error during Google sign-in. Please try again.';
+    }
+    if (error?.code === 'auth/popup-closed-by-user') {
+        return 'Google sign-in was closed before it finished.';
+    }
+    return 'Google sign-in failed. Please try again.';
+}
 
 userAvatar.addEventListener('click', (e) => {
     e.stopPropagation();

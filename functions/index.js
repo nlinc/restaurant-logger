@@ -50,8 +50,8 @@ exports.recommend = onCall({ secrets: [geminiApiKey, mapsApiKey], cors: true, in
         const allTags = visits.flatMap(v => v.tags || []);
         const allTypes = visits.flatMap(v => v.types || []);
         const topRated = visits
-            .filter(v => v.user_rating && v.user_rating >= 4)
-            .map(v => `${v.name} (${v.user_rating}★, tags: ${(v.tags || []).join(", ") || "none"})`)
+            .filter(v => v.user_rating && v.user_rating >= 3)
+            .map(v => `${v.name} (${v.user_rating}/3, tags: ${(v.tags || []).join(", ") || "none"})`)
             .slice(0, 10);
         const visitedIds = visits.map(v => v.place_id).filter(Boolean);
 
@@ -91,10 +91,10 @@ ${historyText || "No chat history yet."}
 USER TASTE PROFILE:
 - Total visits logged: ${visits.length}
 - Wishlist items: ${wishlist.length}
-- Top-rated places: ${topRated.join("; ") || "None rated 4+ stars yet"}
+- Top-rated places: ${topRated.join("; ") || "None marked as loved yet"}
 - Favorite tags: ${topTags.join(", ") || "No tags yet"}
 - Frequent cuisine types: ${topTypes.join(", ") || "Mixed"}
-- Average user rating: ${(visits.reduce((s, v) => s + (v.user_rating || 0), 0) / visits.filter(v => v.user_rating).length || 0).toFixed(1)}
+- Average user rating on a 1-3 scale: ${(visits.reduce((s, v) => s + (v.user_rating || 0), 0) / visits.filter(v => v.user_rating).length || 0).toFixed(1)}
 
 USER WISHLIST (Potential places they want to try):
 ${wishlistSummary.join("; ") || "None yet"}
