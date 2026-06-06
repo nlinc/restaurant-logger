@@ -991,6 +991,7 @@ async function initMap() {
         zoom: 13,
         center: mapCenter,
         disableDefaultUI: true,
+        gestureHandling: "greedy",
         styles: [
             { "elementType": "geometry", "stylers": [{ "color": "#212121" }] },
             { "elementType": "labels.text.stroke", "stylers": [{ "color": "#212121" }] },
@@ -1021,13 +1022,45 @@ function updateMarkers() {
     markers.forEach(m => m.setMap(null));
     markers = [];
 
-    const placesToPlot = (showCircleMap ? circlePlaces : allPlaces).filter(place => !['dismissed', 'recommended'].includes(place.status));
+    // Toggle legend items for friends if in circle
+    const friendVisitedEl = document.getElementById('legend-friend-visited');
+    const friendWishlistEl = document.getElementById('legend-friend-wishlist');
+    if (friendVisitedEl && friendWishlistEl) {
+        const hasCircle = !!currentCircle;
+        friendVisitedEl.style.display = hasCircle ? 'inline-flex' : 'none';
+        friendWishlistEl.style.display = hasCircle ? 'inline-flex' : 'none';
+    }
+
+    const uniquePlaces = new Map();
+
+    // 1. Add all personal places (which overrides circle places, so they show as "Mine")
+    allPlaces.forEach(place => {
+        const key = place.place_id || `${place.name}|${place.address}`;
+        uniquePlaces.set(key, { ...place, isMine: true });
+    });
+
+    // 2. Add all circle places (if they aren't already added)
+    circlePlaces.forEach(place => {
+        const key = place.place_id || `${place.name}|${place.address}`;
+        if (!uniquePlaces.has(key)) {
+            uniquePlaces.set(key, { ...place, isMine: place.uid === currentUser.uid });
+        }
+    });
+
+    const placesToPlot = Array.from(uniquePlaces.values()).filter(place => !['dismissed', 'recommended'].includes(place.status));
 
     placesToPlot.forEach(place => {
         if (!place.lat || !place.lng) return;
 
+        const isMine = place.isMine;
         const isVisited = !place.status || place.status === 'visited';
-        const color = isVisited ? '#f59e0b' : '#3b82f6'; // Gold vs Blue
+
+        let color = '#d8a54a'; // Gold (Default: Mine, Tried)
+        if (isMine) {
+            color = isVisited ? '#d8a54a' : '#91b7c7'; // Gold vs Sky Blue
+        } else {
+            color = isVisited ? '#5f8f7a' : '#a78bfa'; // Pine Green vs Purple
+        }
 
         const marker = new google.maps.Marker({
             position: { lat: place.lat, lng: place.lng },
@@ -1043,12 +1076,13 @@ function updateMarkers() {
             }
         });
 
-        const savedBy = showCircleMap ? (currentCircle?.membersInfo?.[place.uid]?.displayName || 'Friend') : 'You';
+        const savedBy = isMine ? 'You' : (currentCircle?.membersInfo?.[place.uid]?.displayName || 'Friend');
+        const statusText = isVisited ? '✅ Visited' : '📍 Wishlist';
         const infoWindow = new google.maps.InfoWindow({
             content: `
                 <div style="padding: 10px; color: #fff;">
                     <strong style="display:block; margin-bottom: 5px;">${escapeHtml(place.name)}</strong>
-                    <span style="font-size: 0.75rem; color: #aaa;">${isVisited ? '✅ Visited' : '📍 Wishlist'}</span>
+                    <span style="font-size: 0.75rem; color: #aaa;">${statusText}</span>
                     <span style="display:block; font-size: 0.7rem; color: var(--accent); margin-top: 3px;">Saved by: ${escapeHtml(savedBy)}</span>
                 </div>
             `
@@ -1345,27 +1379,6 @@ function appendChatBubble(role, content, isHtml = false) {
 
 // ===== Collaborative Circles Logic =====
 const circlesCard = document.getElementById('circles-card');
-const mapTogglePersonal = document.getElementById('map-toggle-personal');
-const mapToggleCircle = document.getElementById('map-toggle-circle');
-
-// Toggle map views
-if (mapTogglePersonal && mapToggleCircle) {
-    mapTogglePersonal.addEventListener('click', () => {
-        if (!showCircleMap) return;
-        showCircleMap = false;
-        mapTogglePersonal.classList.add('active');
-        mapToggleCircle.classList.remove('active');
-        updateMarkers();
-    });
-
-    mapToggleCircle.addEventListener('click', () => {
-        if (showCircleMap || mapToggleCircle.disabled) return;
-        showCircleMap = true;
-        mapToggleCircle.classList.add('active');
-        mapTogglePersonal.classList.remove('active');
-        updateMarkers();
-    });
-}
 
 function listenToCircle() {
     if (circleUnsubscribe) circleUnsubscribe();
@@ -1379,35 +1392,19 @@ function listenToCircle() {
     circleUnsubscribe = onSnapshot(q, (snapshot) => {
         if (snapshot.empty) {
             currentCircle = null;
-            if (mapToggleCircle) {
-                mapToggleCircle.disabled = true;
-                mapToggleCircle.classList.remove('active');
-                mapToggleCircle.style.color = 'var(--text-muted)';
-                mapToggleCircle.style.cursor = 'not-allowed';
-            }
-            if (showCircleMap) {
-                showCircleMap = false;
-                if (mapTogglePersonal) mapTogglePersonal.classList.add('active');
-                updateMarkers();
-            }
             renderCirclesUI();
+            renderCircleActivity();
             if (circlePlacesUnsubscribe) {
                 circlePlacesUnsubscribe();
                 circlePlacesUnsubscribe = null;
             }
+            updateMarkers();
             return;
         }
 
         const docSnap = snapshot.docs[0];
         currentCircle = { id: docSnap.id, ...docSnap.data() };
         
-        // Enable map toggle
-        if (mapToggleCircle) {
-            mapToggleCircle.disabled = false;
-            mapToggleCircle.style.color = 'var(--text-primary)';
-            mapToggleCircle.style.cursor = 'pointer';
-        }
-
         renderCirclesUI();
         listenToCirclePlaces();
     }, (error) => {
@@ -1430,10 +1427,9 @@ function listenToCirclePlaces() {
             circlePlaces.push({ id: doc.id, ...doc.data() });
         });
 
-        if (showCircleMap) {
-            updateMarkers();
-        }
+        updateMarkers();
         renderCirclesUI();
+        renderCircleActivity();
     }, (error) => {
         console.error("Circle places listener error:", error);
     });
@@ -1508,52 +1504,6 @@ function renderCirclesUI() {
             </div>
         `).join('');
 
-        const recentVisits = circlePlaces
-            .filter(p => (!p.status || p.status === 'visited') && p.uid)
-            .sort((a, b) => getPlaceTime(b) - getPlaceTime(a))
-            .slice(0, 10);
-
-        let activityHtml = '';
-        if (recentVisits.length > 0) {
-            activityHtml = `
-                <div style="margin-top: 1rem; border-top: 1px solid var(--border); padding-top: 0.75rem;">
-                    <p style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.5rem;">Recent Circle Activity</p>
-                    <div class="circle-activity-list" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 250px; overflow-y: auto; padding-right: 0.25rem;">
-                        ${recentVisits.map(visit => {
-                            const memberName = currentCircle.membersInfo?.[visit.uid]?.displayName || 'A Friend';
-                            const memberPhoto = currentCircle.membersInfo?.[visit.uid]?.photoURL || 'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg';
-                            const ratingLabel = renderCategoryBadge(visit.user_rating);
-                            const dateStr = visit.visited_at?.toDate ? formatDate(visit.visited_at.toDate()) : '';
-                            return `
-                                <div class="circle-activity-item" style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.6rem; display: flex; flex-direction: column; gap: 0.25rem;">
-                                    <div style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: var(--text-muted);">
-                                        <img src="${memberPhoto}" alt="${escapeHtml(memberName)}" style="width: 16px; height: 16px; border-radius: 50%;">
-                                        <strong style="color: var(--text-primary);">${escapeHtml(memberName)}</strong>
-                                        <span>visited</span>
-                                        <span style="margin-left: auto;">${dateStr}</span>
-                                    </div>
-                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.1rem;">
-                                        <span style="font-weight: 600; font-size: 0.85rem; color: var(--text-primary);">${escapeHtml(visit.name)}</span>
-                                        <span style="font-size: 0.7rem; color: var(--accent); font-weight: 500;">${ratingLabel}</span>
-                                    </div>
-                                    ${visit.notes ? `<p style="margin: 0; font-size: 0.75rem; color: var(--text-secondary); line-height: 1.3;">${escapeHtml(visit.notes)}</p>` : ''}
-                                </div>
-                            `;
-                        }).join('')}
-                    </div>
-                </div>
-            `;
-        } else {
-            activityHtml = `
-                <div style="margin-top: 1rem; border-top: 1px solid var(--border); padding-top: 0.75rem;">
-                    <p style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.5rem;">Recent Circle Activity</p>
-                    <div style="text-align: center; padding: 1.25rem; color: var(--text-muted); font-size: 0.75rem; border: 1px dashed var(--border); border-radius: var(--radius-md);">
-                        No circle activity logged yet.
-                    </div>
-                </div>
-            `;
-        }
-
         circlesCard.innerHTML = `
             <div class="circles-dashboard active-circle-view">
                 <div class="circle-header-title">
@@ -1567,8 +1517,6 @@ function renderCirclesUI() {
                 <div class="circle-members-list">
                     ${membersHtml}
                 </div>
-
-                ${activityHtml}
             </div>
         `;
 
@@ -1578,6 +1526,54 @@ function renderCirclesUI() {
         });
 
         document.getElementById('leave-circle-btn').addEventListener('click', handleLeaveCircle);
+    }
+}
+
+function renderCircleActivity() {
+    const section = document.getElementById('circle-activity-section');
+    const feed = document.getElementById('circle-activity-feed');
+    if (!section || !feed) return;
+
+    if (!currentCircle) {
+        section.style.display = 'none';
+        return;
+    }
+
+    const recentVisits = circlePlaces
+        .filter(p => (!p.status || p.status === 'visited') && p.uid)
+        .sort((a, b) => getPlaceTime(b) - getPlaceTime(a))
+        .slice(0, 10);
+
+    if (recentVisits.length > 0) {
+        feed.innerHTML = recentVisits.map(visit => {
+            const memberName = currentCircle.membersInfo?.[visit.uid]?.displayName || 'A Friend';
+            const memberPhoto = currentCircle.membersInfo?.[visit.uid]?.photoURL || 'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg';
+            const ratingLabel = renderCategoryBadge(visit.user_rating);
+            const dateStr = visit.visited_at?.toDate ? formatDate(visit.visited_at.toDate()) : '';
+            return `
+                <div class="circle-activity-item" style="background: rgba(255, 255, 255, 0.025); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.65rem 0.85rem; display: flex; flex-direction: column; gap: 0.25rem;">
+                    <div style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: var(--text-muted);">
+                        <img src="${memberPhoto}" alt="${escapeHtml(memberName)}" style="width: 18px; height: 18px; border-radius: 50%;">
+                        <strong style="color: var(--text-primary);">${escapeHtml(memberName)}</strong>
+                        <span>visited</span>
+                        <span style="margin-left: auto;">${dateStr}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.15rem;">
+                        <span style="font-weight: 600; font-size: 0.88rem; color: var(--text-primary);">${escapeHtml(visit.name)}</span>
+                        <span style="font-size: 0.72rem; color: var(--accent); font-weight: 500;">${ratingLabel}</span>
+                    </div>
+                    ${visit.notes ? `<p style="margin: 0; font-size: 0.78rem; color: var(--text-secondary); line-height: 1.35; margin-top: 0.1rem;">${escapeHtml(visit.notes)}</p>` : ''}
+                </div>
+            `;
+        }).join('');
+        section.style.display = 'block';
+    } else {
+        feed.innerHTML = `
+            <div style="text-align: center; padding: 1.5rem; color: var(--text-muted); font-size: 0.8rem; border: 1px dashed var(--border); border-radius: var(--radius-md);">
+                No circle activity logged yet. Share your code to invite friends!
+            </div>
+        `;
+        section.style.display = 'block';
     }
 }
 
@@ -1753,7 +1749,7 @@ if ('serviceWorker' in navigator) {
             window.location.reload();
         });
 
-        navigator.serviceWorker.register('/sw.js?v=8')
+        navigator.serviceWorker.register('/sw.js?v=10')
             .then(reg => {
                 console.log('Service Worker registered successfully.', reg.scope);
                 reg.update();

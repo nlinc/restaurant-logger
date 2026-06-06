@@ -1615,3 +1615,53 @@ body {
   border-color: var(--accent) !important;
   color: var(--accent-text) !important;
 }
+
+/* ===== Map Legend ===== */
+.map-legend-container {
+  position: absolute;
+  bottom: 1rem;
+  left: 1rem;
+  right: 1rem;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.map-legend {
+  background: rgba(21, 33, 29, 0.92);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 0.45rem 0.8rem;
+  display: flex;
+  gap: 0.75rem;
+  pointer-events: auto;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  font-size: 0.68rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.legend-item .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.legend-item .dot.gold { background: #d8a54a; }
+.legend-item .dot.sky { background: #91b7c7; }
+.legend-item .dot.pine { background: #5f8f7a; }
+.legend-item .dot.purple { background: #a78bfa; }
+

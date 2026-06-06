@@ -7,7 +7,7 @@
     <title>Lincoln Eats — Restaurant Logger</title>
     <meta name="description" content="Log your restaurant visits, rate your favorites, and get AI-powered dining recommendations based on your taste profile.">
     <meta name="theme-color" content="#0a0a0a">
-    <link rel="stylesheet" href="css/styles.css?v=8">
+    <link rel="stylesheet" href="css/styles.css?v=10">
     <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
     
     <!-- PWA Configurations -->
@@ -105,6 +105,12 @@
                 <div id="recommendation-history" class="recommendation-history"></div>
             </section>
 
+            <!-- Circle Activity Section -->
+            <section class="circle-activity-section" id="circle-activity-section" style="display: none; margin-bottom: 1.5rem;">
+                <p class="section-title">Circle Activity</p>
+                <div id="circle-activity-feed" class="circle-activity-feed" style="display: flex; flex-direction: column; gap: 0.6rem;"></div>
+            </section>
+
             <!-- History -->
             <p class="section-title">Your History</p>
             <section class="history-section" id="history-section">
@@ -117,14 +123,18 @@
 
         <!-- View: Map -->
         <main id="view-map" class="app-view">
-            <div class="map-toggle-bar" style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-xl); padding: 0.25rem; max-width: 250px;">
-                <button class="map-toggle-btn active" id="map-toggle-personal" style="flex: 1; padding: 0.4rem; background: var(--accent-soft); border: 1px solid var(--accent); color: var(--accent-text); border-radius: var(--radius-xl); font-size: 0.75rem; font-weight: 600; cursor: pointer; transition: all 0.2s;">My Map</button>
-                <button class="map-toggle-btn" id="map-toggle-circle" disabled style="flex: 1; padding: 0.4rem; background: transparent; border: 1px solid transparent; color: var(--text-muted); border-radius: var(--radius-xl); font-size: 0.75rem; font-weight: 500; cursor: not-allowed; transition: all 0.2s;">Circle Map</button>
-            </div>
             <div class="map-container">
                 <div id="map"></div>
                 <div class="map-overlay">
                     <p>Exploring your food world</p>
+                </div>
+                <div class="map-legend-container">
+                    <div class="map-legend">
+                        <span class="legend-item"><span class="dot gold"></span> You (Tried)</span>
+                        <span class="legend-item"><span class="dot sky"></span> You (Wishlist)</span>
+                        <span class="legend-item" id="legend-friend-visited" style="display: none;"><span class="dot pine"></span> Friends (Tried)</span>
+                        <span class="legend-item" id="legend-friend-wishlist" style="display: none;"><span class="dot purple"></span> Friends (Wishlist)</span>
+                    </div>
                 </div>
             </div>
         </main>
@@ -229,7 +239,7 @@
         });
     </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script type="module" src="js/app.js?v=8"></script>
+    <script type="module" src="js/app.js?v=10"></script>
 </body>
 
 </html>
