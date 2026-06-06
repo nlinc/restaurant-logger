@@ -25,14 +25,14 @@ service cloud.firestore {
       // Codes are searchable for joining; membership edits are constrained below.
       allow read: if isSignedIn();
       allow create: if isOwner(request.resource.data.owner)
-        && request.resource.data.members[request.auth.uid] == true;
+        && request.resource.data.members.get(request.auth.uid, false) == true;
       allow update: if isSignedIn()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'membersInfo', 'owner'])
         && (
-          resource.data.members[request.auth.uid] == true
+          resource.data.members.get(request.auth.uid, false) == true
           || (
-            resource.data.members[request.auth.uid] != true
-            && request.resource.data.members[request.auth.uid] == true
+            resource.data.members.get(request.auth.uid, false) != true
+            && request.resource.data.members.get(request.auth.uid, false) == true
           )
         );
       allow delete: if isOwner(resource.data.owner);
