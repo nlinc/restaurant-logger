@@ -2,10 +2,30 @@
 
 > ⚙️ **Self-maintenance rule — do this automatically, every time.** If a change you make alters this repo's **shape** (files, entry points, structure), its **stack/dependencies**, the **build/test loop**, or a **guardrail**, you MUST update the matching section of THIS file in the *same commit* — before the task counts as done. This is not optional cleanup or a follow-up task.
 
-A restaurant-visit logger and AI dining concierge: log where you've eaten, rate it,
-tag it, scan a receipt to auto-fill the log, and get Gemini-powered "where to go
-next" recommendations personalized to your taste profile — solo or shared with a
-"Dining Circle." Keep changes conservative and preserve the existing structure.
+A decision-first AI dining concierge with a lightweight restaurant memory. The
+primary experience helps someone choose where to eat now; logging, receipt scan,
+maps, taste history, and Dining Circles support that decision loop. Keep changes
+conservative and preserve the existing structure.
+
+## Product direction (authoritative)
+
+- **Primary moment:** before the user chooses a restaurant, especially when they
+  are indecisive and want a nearby answer quickly.
+- **Promise:** deliver useful, real, nearby choices in under 30 seconds. The home
+  experience produces three intentional lanes: a reliable match, something new,
+  and a smart wildcard.
+- **Core loop:** get value first → choose a place → give a one-tap check-in later.
+  Logging is secondary; never make historical data entry the admission price for
+  a first recommendation.
+- **Cold start:** explicit cuisines, typical budget, distance, current mood, and
+  location are enough to make starter picks. Taste preferences and the pending
+  check-in are currently versioned, per-user `localStorage` data on that device;
+  no Firestore profile collection exists.
+- **Beta success metric:** weekly sessions where a user taps **Let's go** on a
+  recommendation, with one-tap check-in completion as the supporting measure.
+- Map, profile charts, receipt scan, and Dining Circles remain useful supporting
+  features, but do not move them ahead of the decision flow without an explicit
+  product reason.
 
 ## Stack (authoritative)
 
@@ -17,13 +37,13 @@ bundler, or framework unless explicitly asked. `chart.js` is loaded via a plain
 - Firebase project: `lincoln-eats-77229` (see `.firebaserc`)
 - Firebase services in use: Hosting, Firestore, Cloud Functions (2nd gen, `nodejs20`), Auth (Google sign-in)
 - Firebase Storage is NOT configured — there is no `storage.rules` and no Storage bucket usage in the app. Don't assume Storage exists.
-- Cloud Functions: `functions/index.js` — two `onCall` v2 functions, `recommend` and `scanReceipt`, both call Gemini (`@google/genai`, model `gemini-2.5-flash`) via secrets (`GEMINI_API_KEY`, `MAPS_API_KEY` defined with `defineSecret`). `recommend` also validates AI suggestions against the Google Places API (Find Place + Place Details) to filter out permanently-closed results.
+- Cloud Functions: `functions/index.js` — two `onCall` v2 functions, `recommend` and `scanReceipt`, both call Gemini (`@google/genai`, model `gemini-2.5-flash`) via secrets (`GEMINI_API_KEY`, `MAPS_API_KEY` defined with `defineSecret`). `recommend` supports `chat` and `three_lanes` modes, accepts bounded device-local taste preferences, and validates immediate-decision suggestions against the Google Places API (Find Place + Place Details), distance, price, business status, and duplicate place IDs.
 - Browser Google Maps/Places: loaded dynamically in `public/js/app.js` via a `<script>` tag pointed at `maps.googleapis.com/maps/api/js`, using the same key exported as `mapsApiKey` from `firebase-config.js` (that key doubles as the Firebase Web API key — it's a public, referrer-restricted browser key, not a secret). Used for the Feed's address Autocomplete and the Map view's markers.
 
 ## Project shape
 
-- App entry: `public/index.html` — 4 views swapped by `data-view` (Feed, Map, Wishlist, Profile), plus the Auth screen, the AI concierge modal, and a toast.
-- Main client logic: `public/js/app.js` (~1,860 lines) — auth, Firestore CRUD for `saved_places`, Places Autocomplete, receipt scan flow, AI concierge chat, map rendering, profile dashboard/charts, Dining Circles (create/join/leave), and the `escapeHtml()` helper.
+- App entry: `public/index.html` — 4 views swapped by `data-view` (Tonight, Map, Saved, Profile), plus the Auth screen, the AI concierge modal, and a toast. `data-view="feed"` remains the internal key for Tonight.
+- Main client logic: `public/js/app.js` (~2,300 lines) — auth, the decision-first recommendation flow, per-user device-local taste preferences and pending check-in, Firestore CRUD for `saved_places`, Places Autocomplete, receipt scan flow, AI concierge chat, map rendering, profile dashboard/charts, Dining Circles (create/join/leave), and the `escapeHtml()` helper.
 - Firebase client config + re-exported Firestore/Auth/Functions helpers: `public/js/firebase-config.js`
 - Styles: `public/css/styles.css` (plain CSS, no preprocessor)
 - Service worker: `public/sw.js` — network-first for app-shell files, cache name `lincoln-eats-v<N>`
@@ -47,13 +67,19 @@ Then verify manually and state exactly what you exercised:
   affected view(s) — Feed (log + Activity Feed), Map, Wishlist, or Profile (dashboard
   + Dining Circles) — plus the AI concierge modal and receipt-scan flow if touched.
   Check mobile width.
+- For signed-in shell QA without touching Firebase data, serve `public/` locally
+  and open `http://127.0.0.1:<port>/?ui-preview=1`. This localhost-only preview
+  bypasses Auth, uses an empty in-memory history, and renders sample recommendation
+  cards when **Find tonight's picks** is tapped. It must never enable Firebase
+  writes or run on a non-local hostname; versioned preview preferences/check-ins
+  may still use the browser's localStorage.
 - For any Cloud Function change: re-read the affected function end-to-end for the
   auth check, the Firestore query, and the Gemini prompt/JSON-parsing contract —
   there's no emulator-backed test for these. Do not deploy to test; that's a
   production action (see Guardrails).
 - If you touch `public/css/styles.css` or `public/js/app.js`, bump the cache-buster:
-  the `?v=N` query params in `public/index.html` (`css/styles.css?v=15`,
-  `js/app.js?v=15`) AND `CACHE_NAME` in `public/sw.js` (`lincoln-eats-v15`) must move
+  the `?v=N` query params in `public/index.html` (`css/styles.css?v=16`,
+  `js/app.js?v=16`) AND `CACHE_NAME` in `public/sw.js` (`lincoln-eats-v16`) must move
   together, or phones will keep serving the stale cached version.
 
 Never claim the work is complete without doing this loop and reporting what you
@@ -106,6 +132,13 @@ actually checked.
   `dismissed`, or `recommended` — status transitions (e.g. wishlist → visited)
   are handled in `app.js` via `findExistingPlace()`; read that function before
   changing how a place moves between states.
+- Home recommendations call `recommend` with `mode: 'three_lanes'` and expect at
+  most one `reliable`, `new`, and `wildcard` result. Immediate-decision results
+  must be Places-verified; it is acceptable to show fewer than three rather than
+  pad the response with an unverified or out-of-range restaurant.
+- **Let's go** opens Google Maps immediately, saves the place for later, and stores
+  a device-local pending check-in. Keep the Maps open synchronous with the tap so
+  mobile browsers do not block it as a popup.
 - Cloud Functions parse Gemini's response by stripping code fences and slicing
   from the first `{` to the last `}` before `JSON.parse` — both `recommend` and
   `scanReceipt` do this defensively because the model doesn't always honor

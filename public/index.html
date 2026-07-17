@@ -4,10 +4,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Lincoln Eats — Restaurant Logger</title>
-    <meta name="description" content="Log your restaurant visits, rate your favorites, and get AI-powered dining recommendations based on your taste profile.">
+    <title>Lincoln Eats — Dinner, Decided</title>
+    <meta name="description" content="Get three nearby restaurant picks matched to your mood, then teach Lincoln your taste with one-tap feedback.">
     <meta name="theme-color" content="#0a0a0a">
-    <link rel="stylesheet" href="css/styles.css?v=15">
+    <link rel="stylesheet" href="css/styles.css?v=16">
     <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
     
     <!-- PWA Configurations -->
@@ -24,7 +24,7 @@
     <div id="auth-screen" class="auth-screen">
         <div class="logo">🍽️</div>
         <h1>Lincoln Eats</h1>
-        <p>Log where you've been. Let AI tell you where to go next.</p>
+        <p>Three nearby picks for tonight, personalized to your taste.</p>
         <button id="google-sign-in" class="google-sign-in-btn">
             <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google">
             Sign in with Google
@@ -48,62 +48,123 @@
             </div>
         </header>
 
-        <!-- View: Feed (Log + History) -->
+        <!-- View: Tonight (Decision + Quick Log + History) -->
         <main id="view-feed" class="app-view active">
-            <!-- Log Form -->
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                <p class="section-title" style="margin-bottom: 0;">Log a Visit</p>
-                <button id="scan-receipt-btn" class="scan-receipt-btn">Scan Receipt</button>
-            </div>
-            <input type="file" id="receipt-file-input" accept="image/*" capture="environment" style="display: none;">
-            <div class="log-card">
-                <div class="form-group">
-                    <label for="restaurant-search">Restaurant</label>
-                    <input type="text" id="restaurant-search" placeholder="Search for a place..." autocomplete="off">
+            <section class="decision-hero" aria-labelledby="decision-title">
+                <p class="decision-eyebrow">Dinner, decided</p>
+                <h2 id="decision-title">Where should we eat?</h2>
+                <p class="decision-copy" id="next-pick-copy">Choose the mood. Lincoln will find up to three verified nearby options in under 30 seconds.</p>
+
+                <div class="occasion-options" id="occasion-options" aria-label="Tonight's mood" role="group">
+                    <button class="occasion-chip active" data-occasion="anything" aria-pressed="true">✨ Anything</button>
+                    <button class="occasion-chip" data-occasion="casual" aria-pressed="false">👟 Casual</button>
+                    <button class="occasion-chip" data-occasion="date night" aria-pressed="false">🕯️ Date night</button>
+                    <button class="occasion-chip" data-occasion="quick bite" aria-pressed="false">⚡ Quick</button>
+                    <button class="occasion-chip" data-occasion="treat night" aria-pressed="false">🥂 Treat</button>
                 </div>
 
-                <div class="form-group">
-                    <label>Your Rating</label>
-                    <div class="category-rating" id="category-rating">
-                        <input type="radio" id="rating-love" name="rating" value="3"><label for="rating-love">❤️ Love</label>
-                        <input type="radio" id="rating-will-go-back" name="rating" value="2"><label for="rating-will-go-back">👍 Will go back</label>
-                        <input type="radio" id="rating-skip-it" name="rating" value="1"><label for="rating-skip-it">👎 Skip it</label>
-                    </div>
+                <button id="get-recommendation-btn" class="decision-primary">Find tonight's picks</button>
+                <div class="decision-secondary-actions">
+                    <button id="toggle-preferences-btn" class="text-action-btn" aria-expanded="false" aria-controls="preference-panel">Tune my picks</button>
+                    <button id="open-concierge-btn" class="text-action-btn">Ask for something specific</button>
                 </div>
 
-                <details class="optional-details">
-                    <summary>Details</summary>
-                    <div class="form-group">
-                        <label for="tags-input">Tags</label>
-                        <input type="text" id="tags-input" placeholder="Type a tag and press Enter...">
-                        <div class="tags-container" id="tags-container"></div>
+                <div id="preference-panel" class="preference-panel" hidden>
+                    <div class="preference-heading">
+                        <div>
+                            <h3>Your taste shortcuts</h3>
+                            <p>Stored on this device. Pick as much or as little as you like.</p>
+                        </div>
                     </div>
 
-                    <div class="form-group">
-                        <label for="visit-notes">Notes</label>
-                        <textarea id="visit-notes" placeholder="What did you order? Any tips for next time?" rows="2"></textarea>
-                    </div>
-                </details>
+                    <fieldset class="preference-group">
+                        <legend>Usually craving</legend>
+                        <div class="preference-options" data-preference-group="cuisines">
+                            <button data-preference-value="italian">Italian</button>
+                            <button data-preference-value="mexican">Mexican</button>
+                            <button data-preference-value="american">American</button>
+                            <button data-preference-value="japanese">Japanese</button>
+                            <button data-preference-value="thai">Thai</button>
+                            <button data-preference-value="indian">Indian</button>
+                            <button data-preference-value="mediterranean">Mediterranean</button>
+                            <button data-preference-value="surprise me">Surprise me</button>
+                        </div>
+                    </fieldset>
 
-                <div class="form-actions">
-                    <button id="wishlist-btn" class="wishlist-btn" disabled>Add to Wishlist</button>
-                    <button id="save-btn" class="save-btn" disabled>Save Visit</button>
+                    <fieldset class="preference-group">
+                        <legend>Typical budget</legend>
+                        <div class="preference-options segmented" data-preference-group="priceLevel">
+                            <button data-preference-value="1">$</button>
+                            <button data-preference-value="2">$$</button>
+                            <button data-preference-value="3">$$$</button>
+                        </div>
+                    </fieldset>
+
+                    <fieldset class="preference-group">
+                        <legend>How far?</legend>
+                        <div class="preference-options segmented" data-preference-group="maxDistanceKm">
+                            <button data-preference-value="3">3 km</button>
+                            <button data-preference-value="8">8 km</button>
+                            <button data-preference-value="16">16 km</button>
+                        </div>
+                    </fieldset>
+
+                    <button id="save-preferences-btn" class="preference-save-btn">Use these preferences</button>
                 </div>
-            </div>
 
-            <!-- Recommendations -->
-            <section class="next-pick-section" id="next-pick-section">
-                <div class="next-pick-header">
-                    <div>
-                        <p class="section-title" style="margin-bottom: 0.2rem;">Recommended Next</p>
-                        <p class="next-pick-copy" id="next-pick-copy">Log a few places and Lincoln will start suggesting where to go next.</p>
-                    </div>
-                    <button id="get-recommendation-btn" class="small-action-btn">Suggest</button>
-                    <button id="open-concierge-btn" class="small-action-btn secondary">Ask</button>
-                </div>
-                <div id="home-recommendations" class="recommendation-list"></div>
+                <div id="home-recommendations" class="recommendation-list" aria-live="polite"></div>
                 <div id="recommendation-history" class="recommendation-history"></div>
             </section>
+
+            <section id="pending-checkin" class="pending-checkin" hidden aria-live="polite"></section>
+
+            <details class="quick-log-panel" id="quick-log-panel">
+                <summary>
+                    <span><strong>Already ate?</strong> Log it in a few taps.</span>
+                    <span class="quick-log-plus" aria-hidden="true">＋</span>
+                </summary>
+                <div class="quick-log-content">
+                    <div class="quick-log-heading">
+                        <p class="section-title">Quick log</p>
+                        <button id="scan-receipt-btn" class="scan-receipt-btn">Scan Receipt</button>
+                    </div>
+                    <input type="file" id="receipt-file-input" accept="image/*" capture="environment" style="display: none;">
+                    <div class="log-card">
+                        <div class="form-group">
+                            <label for="restaurant-search">Restaurant</label>
+                            <input type="text" id="restaurant-search" placeholder="Search for a place..." autocomplete="off">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Your Rating</label>
+                            <div class="category-rating" id="category-rating">
+                                <input type="radio" id="rating-love" name="rating" value="3"><label for="rating-love">❤️ Love</label>
+                                <input type="radio" id="rating-will-go-back" name="rating" value="2"><label for="rating-will-go-back">👍 Go back</label>
+                                <input type="radio" id="rating-skip-it" name="rating" value="1"><label for="rating-skip-it">👎 Skip it</label>
+                            </div>
+                        </div>
+
+                        <details class="optional-details">
+                            <summary>Add tags or notes</summary>
+                            <div class="form-group">
+                                <label for="tags-input">Tags</label>
+                                <input type="text" id="tags-input" placeholder="Type a tag and press Enter...">
+                                <div class="tags-container" id="tags-container"></div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="visit-notes">Notes</label>
+                                <textarea id="visit-notes" placeholder="What did you order? Any tips for next time?" rows="2"></textarea>
+                            </div>
+                        </details>
+
+                        <div class="form-actions">
+                            <button id="wishlist-btn" class="wishlist-btn" disabled>Save for later</button>
+                            <button id="save-btn" class="save-btn" disabled>Save Visit</button>
+                        </div>
+                    </div>
+                </div>
+            </details>
 
             <!-- Combined History / Activity Feed -->
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; margin-top: 1.5rem;">
@@ -117,7 +178,7 @@
             <section class="history-section" id="history-section">
                 <div class="empty-state" id="empty-state">
                     <span class="icon">📍</span>
-                    <p>No visits logged yet.<br>Search for a restaurant above to get started.</p>
+                    <p>No visits logged yet.<br>Use “Already ate?” above whenever you want to remember one.</p>
                 </div>
             </section>
         </main>
@@ -142,7 +203,7 @@
 
         <!-- View: Wishlist -->
         <main id="view-wishlist" class="app-view">
-            <p class="section-title">Want to Go</p>
+            <p class="section-title">Saved for Later</p>
             <div class="wishlist-filters">
                 <button class="filter-chip active" data-filter="all">All</button>
                 <button class="filter-chip" data-filter="nearby">Nearby</button>
@@ -150,7 +211,7 @@
             <section class="wishlist-section" id="wishlist-section">
                 <div class="empty-state">
                     <span class="icon">🔖</span>
-                    <p>Your wishlist is empty.<br>Search for a place and tap "Add to Wishlist" to save it for later.</p>
+                    <p>Nothing saved yet.<br>Save one of tonight’s picks to keep it handy.</p>
                 </div>
             </section>
         </main>
@@ -170,7 +231,7 @@
         <nav class="bottom-nav">
             <button class="nav-item active" data-view="feed">
                 <span class="icon">🏠</span>
-                <span class="label">Feed</span>
+                <span class="label">Tonight</span>
             </button>
             <button class="nav-item" data-view="map">
                 <span class="icon">📍</span>
@@ -178,7 +239,7 @@
             </button>
             <button class="nav-item" data-view="wishlist">
                 <span class="icon">🔖</span>
-                <span class="label">Wishlist</span>
+                <span class="label">Saved</span>
             </button>
             <button class="nav-item" data-view="profile">
                 <span class="icon">👤</span>
@@ -193,9 +254,12 @@
 
     <!-- AI Modal -->
     <div id="ai-overlay" class="ai-overlay"></div>
-    <div id="ai-modal" class="ai-modal">
+    <div id="ai-modal" class="ai-modal" role="dialog" aria-modal="true" aria-labelledby="ai-modal-title">
         <div class="ai-modal-handle"></div>
-        <h2>✨ Ask Lincoln — Dining Concierge</h2>
+        <div class="ai-modal-title-row">
+            <h2 id="ai-modal-title">✨ Ask Lincoln — Dining Concierge</h2>
+            <button id="close-ai-modal" class="ai-close-btn" aria-label="Close dining concierge">×</button>
+        </div>
         <p class="subtitle">AI analyzes your taste profile and curates dining plans.</p>
         
         <!-- Mood Chips Container -->
@@ -240,7 +304,7 @@
         });
     </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script type="module" src="js/app.js?v=15"></script>
+    <script type="module" src="js/app.js?v=16"></script>
 </body>
 
 </html>

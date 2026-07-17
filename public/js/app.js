@@ -13,6 +13,8 @@ mapsScript.src = `https://maps.googleapis.com/maps/api/js?key=${mapsApiKey}&libr
 mapsScript.async = true;
 mapsScript.defer = true;
 document.head.appendChild(mapsScript);
+const isLocalUiPreview = ['localhost', '127.0.0.1'].includes(window.location.hostname)
+    && new URLSearchParams(window.location.search).get('ui-preview') === '1';
 
 // ===== DOM Refs =====
 const authScreen = document.getElementById('auth-screen');
@@ -38,6 +40,12 @@ const getRecommendationBtn = document.getElementById('get-recommendation-btn');
 const openConciergeBtn = document.getElementById('open-concierge-btn');
 const homeRecommendations = document.getElementById('home-recommendations');
 const recommendationHistory = document.getElementById('recommendation-history');
+const occasionOptions = document.getElementById('occasion-options');
+const togglePreferencesBtn = document.getElementById('toggle-preferences-btn');
+const preferencePanel = document.getElementById('preference-panel');
+const savePreferencesBtn = document.getElementById('save-preferences-btn');
+const pendingCheckin = document.getElementById('pending-checkin');
+const quickLogPanel = document.getElementById('quick-log-panel');
 
 const navItems = document.querySelectorAll('.nav-item');
 const appViews = document.querySelectorAll('.app-view');
@@ -51,6 +59,7 @@ const aiChatHistory = document.getElementById('ai-chat-history');
 const aiChatForm = document.getElementById('ai-chat-form');
 const aiChatInput = document.getElementById('ai-chat-input');
 const aiMoodChips = document.getElementById('ai-mood-chips');
+const closeAiModalBtn = document.getElementById('close-ai-modal');
 const scanReceiptBtn = document.getElementById('scan-receipt-btn');
 const receiptFileInput = document.getElementById('receipt-file-input');
 
@@ -75,6 +84,9 @@ let circlePlaces = [];
 let circlePlacesUnsubscribe = null;
 let showCircleMap = false;
 let scannedReceiptData = null;
+let selectedOccasion = 'anything';
+let tastePreferences = getDefaultTastePreferences();
+let pendingChoiceSavePromise = null;
 const recommendationCache = new Map();
 
 // ===== Auth =====
@@ -143,6 +155,8 @@ signOutBtn.addEventListener('click', async () => {
 });
 
 onAuthStateChanged(auth, (user) => {
+    if (isLocalUiPreview) return;
+    if (currentUser?.uid !== user?.uid) resetUserScopedClientState();
     currentUser = user;
     if (user) {
         authScreen.style.display = 'none';
@@ -150,6 +164,9 @@ onAuthStateChanged(auth, (user) => {
         aiFab.style.display = 'none';
         userAvatar.src = user.photoURL || '';
         userAvatar.alt = user.displayName || 'User';
+        loadTastePreferences();
+        renderPreferenceControls();
+        renderPendingCheckin();
         listenToHistory();
         listenToCircle();
     } else {
@@ -171,6 +188,23 @@ onAuthStateChanged(auth, (user) => {
         }
     }
 });
+
+if (isLocalUiPreview) {
+    currentUser = {
+        uid: 'local-preview-user',
+        displayName: 'Local Preview',
+        photoURL: ''
+    };
+    authScreen.style.display = 'none';
+    appContainer.classList.add('active');
+    userAvatar.alt = currentUser.displayName;
+    loadTastePreferences();
+    renderPreferenceControls();
+    renderPendingCheckin();
+    updateViews();
+    scanReceiptBtn.disabled = true;
+    scanReceiptBtn.title = 'Receipt scanning is disabled in local UI preview.';
+}
 
 // ===== Navigation =====
 navItems.forEach(item => {
@@ -306,7 +340,7 @@ function renderTags() {
 // ===== Save Buttons =====
 function updateSaveBtn() {
     const hasPlace = !!selectedPlace;
-    saveBtn.disabled = !hasPlace;
+    saveBtn.disabled = !hasPlace || !getSelectedRating();
     wishlistBtn.disabled = !hasPlace;
 }
 
@@ -314,6 +348,126 @@ saveBtn.addEventListener('click', () => handleSave('visited'));
 wishlistBtn.addEventListener('click', () => handleSave('wishlist'));
 getRecommendationBtn.addEventListener('click', handleHomeRecommendations);
 openConciergeBtn.addEventListener('click', openAiModal);
+
+occasionOptions.addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-occasion]');
+    if (!chip) return;
+
+    selectedOccasion = chip.dataset.occasion;
+    occasionOptions.querySelectorAll('[data-occasion]').forEach(option => {
+        const isSelected = option === chip;
+        option.classList.toggle('active', isSelected);
+        option.setAttribute('aria-pressed', String(isSelected));
+    });
+});
+
+togglePreferencesBtn.addEventListener('click', () => {
+    const willOpen = preferencePanel.hidden;
+    preferencePanel.hidden = !willOpen;
+    togglePreferencesBtn.setAttribute('aria-expanded', String(willOpen));
+    togglePreferencesBtn.textContent = willOpen ? 'Hide taste settings' : 'Tune my picks';
+});
+
+preferencePanel.addEventListener('click', (e) => {
+    const option = e.target.closest('[data-preference-value]');
+    if (!option) return;
+
+    const group = option.closest('[data-preference-group]')?.dataset.preferenceGroup;
+    const value = option.dataset.preferenceValue;
+    if (group === 'cuisines') {
+        const next = new Set(tastePreferences.cuisines);
+        if (next.has(value)) next.delete(value);
+        else if (next.size < 5) next.add(value);
+        else return showToast('Choose up to five cuisines.', 'info');
+        tastePreferences.cuisines = [...next];
+    } else if (group === 'priceLevel') {
+        tastePreferences.priceLevel = Number(value);
+    } else if (group === 'maxDistanceKm') {
+        tastePreferences.maxDistanceKm = Number(value);
+    }
+    renderPreferenceControls();
+});
+
+savePreferencesBtn.addEventListener('click', () => {
+    saveTastePreferences();
+    preferencePanel.hidden = true;
+    togglePreferencesBtn.setAttribute('aria-expanded', 'false');
+    togglePreferencesBtn.textContent = 'Tune my picks';
+    getRecommendationBtn.focus();
+    showToast('Taste settings saved on this device.', 'success');
+});
+
+function getPreferenceStorageKey() {
+    return currentUser ? `lincolnEats:taste:v1:${currentUser.uid}` : null;
+}
+
+function loadTastePreferences() {
+    tastePreferences = getDefaultTastePreferences();
+    const key = getPreferenceStorageKey();
+    if (!key) return;
+    try {
+        const stored = JSON.parse(localStorage.getItem(key) || 'null');
+        if (!stored || stored.version !== 1) return;
+        tastePreferences = {
+            cuisines: Array.isArray(stored.cuisines) ? stored.cuisines.slice(0, 5) : [],
+            priceLevel: [1, 2, 3].includes(Number(stored.priceLevel)) ? Number(stored.priceLevel) : 2,
+            maxDistanceKm: [3, 8, 16].includes(Number(stored.maxDistanceKm)) ? Number(stored.maxDistanceKm) : 8
+        };
+    } catch (e) {
+        console.warn('Could not load taste settings:', e);
+    }
+}
+
+function getDefaultTastePreferences() {
+    return {
+        cuisines: [],
+        priceLevel: 2,
+        maxDistanceKm: 8
+    };
+}
+
+function resetUserScopedClientState() {
+    selectedPlace = null;
+    scannedReceiptData = null;
+    tags = [];
+    allPlaces = [];
+    circlePlaces = [];
+    aiChatHistoryData = [];
+    pendingChoiceSavePromise = null;
+    tastePreferences = getDefaultTastePreferences();
+    recommendationCache.clear();
+    homeRecommendations.innerHTML = '';
+    recommendationHistory.innerHTML = '';
+    pendingCheckin.hidden = true;
+    pendingCheckin.innerHTML = '';
+    searchInput.value = '';
+    notesInput.value = '';
+    document.querySelectorAll('.category-rating input').forEach(input => { input.checked = false; });
+    renderTags();
+    updateSaveBtn();
+}
+
+function saveTastePreferences() {
+    const key = getPreferenceStorageKey();
+    if (!key) return;
+    try {
+        localStorage.setItem(key, JSON.stringify({ version: 1, ...tastePreferences }));
+    } catch (e) {
+        console.warn('Could not save taste settings:', e);
+    }
+}
+
+function renderPreferenceControls() {
+    preferencePanel.querySelectorAll('[data-preference-value]').forEach(option => {
+        const group = option.closest('[data-preference-group]')?.dataset.preferenceGroup;
+        const value = option.dataset.preferenceValue;
+        const active = group === 'cuisines'
+            ? tastePreferences.cuisines.includes(value)
+            : Number(tastePreferences[group]) === Number(value);
+        option.classList.toggle('active', active);
+        option.setAttribute('aria-pressed', String(active));
+    });
+}
 
 document.addEventListener('click', async (e) => {
     const actionBtn = e.target.closest('[data-rec-action]');
@@ -392,6 +546,7 @@ receiptFileInput.addEventListener('change', async (e) => {
 
         // Auto-fill notes
         applyReceiptDetailsToForm(scannedReceiptData);
+        updateSaveBtn();
 
         showToast('Receipt details added to this log.', 'success');
 
@@ -432,7 +587,11 @@ function convertFileToBase64(file) {
 }
 
 async function handleSave(status) {
-    if (!selectedPlace || !currentUser) return;
+    if (!selectedPlace || !currentUser) return false;
+    if (isLocalUiPreview) {
+        showToast('Preview only—no Firebase data was written.', 'info');
+        return false;
+    }
 
     const btn = status === 'visited' ? saveBtn : wishlistBtn;
     const originalText = btn.textContent;
@@ -468,12 +627,12 @@ async function handleSave(status) {
                 showToast('You already logged this place.', 'info');
                 btn.disabled = false;
                 btn.textContent = originalText;
-                return;
+                return false;
             } else if (status === 'wishlist' && existing.status === 'wishlist') {
                 showToast('That place is already on your wishlist.', 'info');
                 btn.disabled = false;
                 btn.textContent = originalText;
-                return;
+                return false;
             } else if (status === 'wishlist' && ['recommended', 'dismissed'].includes(existing.status)) {
                 await updateDoc(doc(db, "saved_places", existing.id), payload);
                 showToast('Added to Wishlist!', 'success');
@@ -485,7 +644,7 @@ async function handleSave(status) {
                 showToast('That place is already saved.', 'info');
                 btn.disabled = false;
                 btn.textContent = originalText;
-                return;
+                return false;
             }
         } else {
             await addDoc(collection(db, "saved_places"), payload);
@@ -504,12 +663,14 @@ async function handleSave(status) {
 
         btn.textContent = originalText;
         updateSaveBtn();
+        return true;
 
     } catch (e) {
         console.error("Error saving:", e);
         btn.disabled = false;
         btn.textContent = originalText;
         showToast('Failed to save. Please try again.', 'error');
+        return false;
     }
 }
 
@@ -577,7 +738,7 @@ function updateViews() {
     }
 }
 
-function renderCardActions(name, lat, lng, placeId = '', address = '') {
+function renderCardActions(name, lat, lng, placeId = '', address = '', decisionMode = false) {
     const queryText = [name, address].filter(Boolean).join(' ');
     const encodedQuery = encodeURIComponent(queryText || name);
     const encodedName = encodeURIComponent(name);
@@ -585,7 +746,7 @@ function renderCardActions(name, lat, lng, placeId = '', address = '') {
     const directionsDestination = lat && lng ? `${lat},${lng}` : encodedQuery;
     const directionsPlaceParam = encodedPlaceId ? `&destination_place_id=${encodedPlaceId}` : '';
     const placeIdParam = encodedPlaceId ? `&query_place_id=${encodedPlaceId}` : '';
-    const mapsLink = `<a href="https://www.google.com/maps/dir/?api=1&destination=${directionsDestination}${directionsPlaceParam}" target="_blank" class="action-link primary-action" title="Open directions in Maps">Get me there</a>`;
+    const mapsLink = decisionMode ? '' : `<a href="https://www.google.com/maps/dir/?api=1&destination=${directionsDestination}${directionsPlaceParam}" target="_blank" class="action-link primary-action" title="Open directions in Maps">Get me there</a>`;
     const bookingLink = `<a href="https://www.google.com/maps/search/?api=1&query=${encodedQuery}${placeIdParam}" target="_blank" class="action-link booking-action" title="Open booking options in Maps">Reserve</a>`;
     let lyftLink = '';
     if (lat && lng) {
@@ -789,14 +950,12 @@ function renderRecommendationPrompt(visited, wishlist) {
     if (!nextPickCopy || !getRecommendationBtn) return;
 
     const signalCount = visited.length + wishlist.length;
-    getRecommendationBtn.disabled = signalCount === 0;
-
     if (signalCount === 0) {
-        nextPickCopy.textContent = 'Log a few places and Lincoln will start suggesting where to go next.';
+        nextPickCopy.textContent = 'Start with up to three verified places nearby. Tune a few preferences if you want a sharper first pick.';
     } else if (visited.length < 3) {
-        nextPickCopy.textContent = 'You have enough signal for a light recommendation. A few more ratings will sharpen it.';
+        nextPickCopy.textContent = 'Three nearby options, using your early taste signals and tonight\'s mood.';
     } else {
-        nextPickCopy.textContent = 'Ask for a fresh pick based on your saved taste profile.';
+        nextPickCopy.textContent = 'A reliable match, something new, and one smart wildcard—personalized to you.';
     }
 }
 
@@ -872,6 +1031,7 @@ function renderWishlistCards(places) {
             searchInput.value = place.name;
             selectedPlace = { ...place };
             switchView('feed');
+            quickLogPanel.open = true;
             searchInput.focus();
             updateSaveBtn();
         });
@@ -886,14 +1046,35 @@ async function handleHomeRecommendations() {
     const originalText = getRecommendationBtn.textContent;
     getRecommendationBtn.disabled = true;
     getRecommendationBtn.textContent = 'Thinking...';
+    preferencePanel.hidden = true;
+    togglePreferencesBtn.setAttribute('aria-expanded', 'false');
+    togglePreferencesBtn.textContent = 'Tune my picks';
     homeRecommendations.innerHTML = '<div class="inline-loading">Finding a place that fits your taste...</div>';
+
+    if (isLocalUiPreview) {
+        const previewRecommendations = [
+            { lane: 'reliable', name: 'Neighborhood Favorite', cuisine: 'Italian', price_range: '$$', reasoning: 'A dependable nearby match for your usual comfort-food mood.', google_rating: 4.7, is_open_now: true, verified: true, address: '12 Market Street' },
+            { lane: 'new', name: 'Fresh Find Kitchen', cuisine: 'Thai', price_range: '$$', reasoning: 'Close to what you enjoy, with enough novelty to make tonight interesting.', google_rating: 4.6, is_open_now: true, verified: true, address: '48 Pine Avenue' },
+            { lane: 'wildcard', name: 'The Clever Detour', cuisine: 'Mediterranean', price_range: '$$', reasoning: 'A smart change of pace that still fits your budget and distance.', google_rating: 4.5, is_open_now: null, verified: true, address: '7 River Road' }
+        ];
+        homeRecommendations.innerHTML = renderRecommendationCardsHtml(previewRecommendations, 'home');
+        getRecommendationBtn.disabled = false;
+        getRecommendationBtn.textContent = originalText;
+        return;
+    }
 
     try {
         const pos = await getUserLocation().catch(() => null);
+        if (!pos) {
+            homeRecommendations.innerHTML = '<div class="inline-empty">Turn on location for nearby picks, or ask Lincoln with your neighborhood or city.</div>';
+            return;
+        }
         const result = await requestRecommendations({
-            message: 'Recommend 3 restaurants I should try next. Favor places I have not visited, explain the match briefly, and include a range of options.',
+            mode: 'three_lanes',
+            message: `Help me choose where to eat now. The occasion is: ${selectedOccasion}.`,
             lat: pos?.coords?.latitude || null,
-            lng: pos?.coords?.longitude || null
+            lng: pos?.coords?.longitude || null,
+            preferences: tastePreferences
         });
 
         if (!result.recommendations || result.recommendations.length === 0) {
@@ -912,28 +1093,39 @@ async function handleHomeRecommendations() {
     }
 }
 
-async function requestRecommendations({ message, lat = null, lng = null }) {
+async function requestRecommendations({ message, lat = null, lng = null, mode = 'chat', preferences = null }) {
     const recommend = httpsCallable(functions, 'recommend');
     const result = await recommend({
         lat,
         lng,
         message,
-        history: aiChatHistoryData
+        history: aiChatHistoryData,
+        mode,
+        preferences
     });
     return result.data || {};
 }
 
 function renderRecommendationCardsHtml(recommendations, surface) {
-    return recommendations.map(rec => {
+    const laneLabels = {
+        reliable: 'Reliable match',
+        new: 'Something new',
+        wildcard: 'Smart wildcard'
+    };
+
+    return recommendations.map((rec, index) => {
         const key = storeRecommendation(rec);
         const encodedKey = encodeURIComponent(key);
+        const fallbackLane = ['reliable', 'new', 'wildcard'][index];
+        const lane = rec.lane || (surface === 'home' ? fallbackLane : null);
         const stars = rec.google_rating ? `⭐ ${rec.google_rating}` : '';
         const openStatus = rec.is_open_now === true ? '🟢 Open now' : rec.is_open_now === false ? '🟡 Closed now' : '';
         const verified = rec.verified ? '✓ Verified' : '';
-        const bookLinks = renderCardActions(rec.name, rec.lat, rec.lng, rec.place_id, rec.address);
+        const bookLinks = renderCardActions(rec.name, rec.lat, rec.lng, rec.place_id, rec.address, surface === 'home');
 
         return `
             <div class="ai-rec-card ${surface === 'home' ? 'home-rec-card' : ''}" data-rec-card="${encodedKey}">
+                ${lane ? `<span class="recommendation-lane">${escapeHtml(laneLabels[lane] || lane)}</span>` : ''}
                 <h4>
                     ${escapeHtml(rec.name)}
                     ${verified ? `<span class="verified-badge">${verified}</span>` : ''}
@@ -947,9 +1139,13 @@ function renderRecommendationCardsHtml(recommendations, surface) {
                     ${openStatus ? `<span>${openStatus}</span>` : ''}
                 </div>
                 <div class="rec-actions">
-                    <button class="rec-feedback-btn primary" data-rec-action="wishlist" data-rec-key="${encodedKey}">Want to go</button>
-                    <button class="rec-feedback-btn" data-rec-action="visited" data-rec-key="${encodedKey}">Tried it</button>
-                    <button class="rec-feedback-btn quiet" data-rec-action="dismissed" data-rec-key="${encodedKey}">Not for me</button>
+                    ${surface === 'home'
+                        ? `<button class="rec-feedback-btn primary" data-rec-action="go" data-rec-key="${encodedKey}">Let's go</button>
+                           <button class="rec-feedback-btn" data-rec-action="wishlist" data-rec-key="${encodedKey}">Save</button>
+                           <button class="rec-feedback-btn quiet" data-rec-action="dismissed" data-rec-key="${encodedKey}">Not tonight</button>`
+                        : `<button class="rec-feedback-btn primary" data-rec-action="wishlist" data-rec-key="${encodedKey}">Want to go</button>
+                           <button class="rec-feedback-btn" data-rec-action="visited" data-rec-key="${encodedKey}">Tried it</button>
+                           <button class="rec-feedback-btn quiet" data-rec-action="dismissed" data-rec-key="${encodedKey}">Not for me</button>`}
                 </div>
                 ${bookLinks}
             </div>
@@ -995,6 +1191,33 @@ function storeRecommendation(rec) {
 async function handleRecommendationAction(rec, action, btn) {
     if (!currentUser) return;
 
+    if (isLocalUiPreview) {
+        if (action === 'go') {
+            storePendingCheckin(rec);
+            renderPendingCheckin();
+            btn.textContent = 'Preview choice saved';
+        } else {
+            btn.textContent = action === 'wishlist' ? 'Preview saved' : 'Preview noted';
+        }
+        btn.disabled = true;
+        showToast('Preview only—no Firebase data was written.', 'info');
+        return;
+    }
+
+    if (action === 'go') {
+        window.open(getDirectionsUrl(rec), '_blank', 'noopener');
+        storePendingCheckin(rec);
+        renderPendingCheckin();
+        btn.textContent = 'On our way';
+        btn.disabled = true;
+        pendingChoiceSavePromise = saveRecommendation(rec, 'wishlist').catch(e => {
+            console.error('Could not save chosen recommendation:', e);
+            return 'error';
+        });
+        showToast('Saved. I’ll ask how it was next time.', 'success');
+        return;
+    }
+
     if (action === 'visited') {
         selectedPlace = {
             ...recommendationToPlace(rec),
@@ -1003,6 +1226,7 @@ async function handleRecommendationAction(rec, action, btn) {
         };
         searchInput.value = rec.name || '';
         switchView('feed');
+        quickLogPanel.open = true;
         closeAiModal();
         updateSaveBtn();
         showToast('Ready to log. Pick a rating and save.', 'info');
@@ -1014,15 +1238,175 @@ async function handleRecommendationAction(rec, action, btn) {
     btn.textContent = action === 'wishlist' ? 'Saving...' : 'Noted';
 
     try {
-        await saveRecommendation(rec, action);
+        const saveResult = await saveRecommendation(rec, action);
         const card = btn.closest('[data-rec-card]');
         if (card) card.classList.add('rec-card-saved');
-        showToast(action === 'wishlist' ? 'Added to wishlist.' : 'Noted for future picks.', 'success');
+        const feedbackMessage = saveResult === 'already_visited'
+            ? 'Already in your visit history.'
+            : saveResult === 'kept_visit'
+                ? 'Noted for tonight. Your visit history is unchanged.'
+                : action === 'wishlist' ? 'Added to Saved.' : 'Noted for future picks.';
+        showToast(feedbackMessage, 'success');
     } catch (e) {
         console.error("Recommendation action error:", e);
         btn.disabled = false;
         btn.textContent = originalText;
         showToast('Could not save that feedback.', 'error');
+    }
+}
+
+function getDirectionsUrl(place) {
+    const destination = place.lat && place.lng
+        ? `${place.lat},${place.lng}`
+        : [place.name, place.address].filter(Boolean).join(' ');
+    const params = new URLSearchParams({
+        api: '1',
+        destination
+    });
+    if (place.place_id) params.set('destination_place_id', place.place_id);
+    return `https://www.google.com/maps/dir/?${params}`;
+}
+
+function getPendingCheckinStorageKey() {
+    return currentUser ? `lincolnEats:pendingCheckin:v1:${currentUser.uid}` : null;
+}
+
+function storePendingCheckin(rec) {
+    const key = getPendingCheckinStorageKey();
+    if (!key) return;
+    const safeRecord = {
+        place_id: rec.place_id || null,
+        saved_place_id: rec.saved_place_id || null,
+        name: rec.name || 'your pick',
+        address: rec.address || '',
+        google_rating: rec.google_rating || null,
+        types: Array.isArray(rec.types) ? rec.types.slice(0, 10) : [],
+        price_level: rec.price_level || null,
+        lat: rec.lat || null,
+        lng: rec.lng || null,
+        chosen_at: Date.now()
+    };
+    try {
+        localStorage.setItem(key, JSON.stringify(safeRecord));
+    } catch (e) {
+        console.warn('Could not remember pending check-in:', e);
+    }
+}
+
+function readPendingCheckin() {
+    const key = getPendingCheckinStorageKey();
+    if (!key) return null;
+    try {
+        const pending = JSON.parse(localStorage.getItem(key) || 'null');
+        if (!pending || !pending.name) return null;
+        if (Date.now() - Number(pending.chosen_at || 0) > 14 * 86400000) {
+            localStorage.removeItem(key);
+            return null;
+        }
+        return pending;
+    } catch (e) {
+        return null;
+    }
+}
+
+function clearPendingCheckin() {
+    const key = getPendingCheckinStorageKey();
+    if (key) localStorage.removeItem(key);
+}
+
+function renderPendingCheckin() {
+    if (!pendingCheckin || !currentUser) return;
+    const pending = readPendingCheckin();
+    if (!pending) {
+        pendingCheckin.hidden = true;
+        pendingCheckin.innerHTML = '';
+        return;
+    }
+
+    pendingCheckin.hidden = false;
+    pendingCheckin.innerHTML = `
+        <h3>Did you make it to ${escapeHtml(pending.name)}?</h3>
+        <p>One tap helps Lincoln make the next set of picks better.</p>
+        <div class="checkin-actions">
+            <button data-checkin-rating="3">❤️ Loved it</button>
+            <button data-checkin-rating="2">👍 Go back</button>
+            <button data-checkin-rating="1">👎 Skip it</button>
+        </div>
+        <button class="checkin-later" data-checkin-later>Not yet—keep it saved</button>
+    `;
+}
+
+pendingCheckin.addEventListener('click', async (e) => {
+    if (e.target.closest('[data-checkin-later]')) {
+        clearPendingCheckin();
+        renderPendingCheckin();
+        showToast('Kept in Saved for later.', 'info');
+        return;
+    }
+
+    const ratingButton = e.target.closest('[data-checkin-rating]');
+    if (!ratingButton) return;
+    if (isLocalUiPreview) {
+        clearPendingCheckin();
+        renderPendingCheckin();
+        showToast('Preview check-in complete—no Firebase data was written.', 'info');
+        return;
+    }
+    const pending = readPendingCheckin();
+    if (!pending) return renderPendingCheckin();
+
+    const rating = Number(ratingButton.dataset.checkinRating);
+    ratingButton.disabled = true;
+    ratingButton.textContent = 'Saving...';
+
+    if (pendingChoiceSavePromise) {
+        await pendingChoiceSavePromise;
+        pendingChoiceSavePromise = null;
+    }
+    const saved = await savePendingCheckin(pending, rating);
+    if (saved) {
+        clearPendingCheckin();
+        renderPendingCheckin();
+    } else {
+        ratingButton.disabled = false;
+        renderPendingCheckin();
+    }
+});
+
+async function savePendingCheckin(pending, rating) {
+    if (!currentUser || ![1, 2, 3].includes(rating)) return false;
+    const place = recommendationToPlace(pending);
+    const existing = findExistingPlace(place, ['visited', 'wishlist', 'recommended', undefined, null]);
+    const payload = {
+        ...place,
+        user_rating: rating,
+        tags: place.types || [],
+        notes: '',
+        order_items: [],
+        total_amount: null,
+        receipt: null,
+        status: 'visited',
+        source: 'ai_recommendation',
+        acted_at: serverTimestamp(),
+        visited_at: serverTimestamp(),
+        uid: currentUser.uid,
+        circle_id: currentCircle ? currentCircle.id : null
+    };
+
+    try {
+        if (existing && (!existing.status || existing.status === 'visited')) {
+            await addDoc(collection(db, 'saved_places'), payload);
+        } else {
+            const targetId = existing?.id || pending.saved_place_id;
+            if (targetId) await updateDoc(doc(db, 'saved_places', targetId), payload);
+            else await addDoc(collection(db, 'saved_places'), payload);
+        }
+        showToast('Visit saved. Your next picks just got smarter.', 'success');
+        return true;
+    } catch (error) {
+        console.error('Pending check-in save failed:', error);
+        showToast('Could not save that check-in. Try again.', 'error');
+        return false;
     }
 }
 
@@ -1032,8 +1416,11 @@ async function saveRecommendation(rec, status) {
     const targetId = rec.saved_place_id || duplicate?.id;
 
     if (duplicate && status === 'wishlist' && (!duplicate.status || duplicate.status === 'visited')) {
-        showToast('You already logged this place.', 'info');
-        return;
+        return 'already_visited';
+    }
+
+    if (duplicate && status === 'dismissed' && (!duplicate.status || duplicate.status === 'visited')) {
+        return 'kept_visit';
     }
 
     const payload = {
@@ -1057,6 +1444,7 @@ async function saveRecommendation(rec, status) {
             recommended_at: serverTimestamp()
         });
     }
+    return 'saved';
 }
 
 function recommendationToPlace(rec) {
@@ -1387,17 +1775,29 @@ function initTasteRadar(scores) {
 // ===== AI Conversational Concierge =====
 aiFab.addEventListener('click', openAiModal);
 
-function openAiModal() {
+let aiModalTrigger = null;
+
+function openAiModal(event) {
+    aiModalTrigger = event?.currentTarget || document.activeElement;
     aiOverlay.classList.add('active');
     aiModal.classList.add('active');
+    closeAiModalBtn.focus();
 }
 
 aiOverlay.addEventListener('click', closeAiModal);
+closeAiModalBtn.addEventListener('click', closeAiModal);
 
 function closeAiModal() {
     aiOverlay.classList.remove('active');
     aiModal.classList.remove('active');
+    if (aiModalTrigger?.focus) aiModalTrigger.focus();
 }
+
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && aiModal.classList.contains('active')) {
+        closeAiModal();
+    }
+});
 
 // Bind chat form submission
 aiChatForm.addEventListener('submit', async (e) => {
@@ -1834,7 +2234,7 @@ if ('serviceWorker' in navigator) {
             window.location.reload();
         });
 
-        navigator.serviceWorker.register('/sw.js?v=15')
+        navigator.serviceWorker.register('/sw.js?v=16')
             .then(reg => {
                 console.log('Service Worker registered successfully.', reg.scope);
                 reg.update();
