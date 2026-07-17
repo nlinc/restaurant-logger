@@ -1,5 +1,7 @@
 # AGENTS.md — Lincoln Eats (restaurant-logger)
 
+> ⚙️ **Self-maintenance rule — do this automatically, every time.** If a change you make alters this repo's **shape** (files, entry points, structure), its **stack/dependencies**, the **build/test loop**, or a **guardrail**, you MUST update the matching section of THIS file in the *same commit* — before the task counts as done. This is not optional cleanup or a follow-up task.
+
 A restaurant-visit logger and AI dining concierge: log where you've eaten, rate it,
 tag it, scan a receipt to auto-fill the log, and get Gemini-powered "where to go
 next" recommendations personalized to your taste profile — solo or shared with a
