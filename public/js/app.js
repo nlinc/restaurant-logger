@@ -2342,7 +2342,7 @@ if ('serviceWorker' in navigator) {
             window.location.reload();
         });
 
-        navigator.serviceWorker.register('/sw.js?v=18')
+        navigator.serviceWorker.register('/sw.js?v=19')
             .then(reg => {
                 console.log('Service Worker registered successfully.', reg.scope);
 

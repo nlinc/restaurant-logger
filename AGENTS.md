@@ -89,12 +89,12 @@ actually checked.
 
 ## Guardrails
 
-- **Human owns the push.** Never run `git push` and never run `firebase deploy`.
-  A push to `main` auto-triggers the production Firebase deploy, so a push (or a
-  manual deploy) IS a production release. Approval of the *work* ("looks good",
-  "ship it") is NOT permission to push. Push only on an explicit, literal
-  instruction ("push to main", "deploy this"). Do not create a commit unless the
-  user explicitly asks for one.
+- **Human owns production releases.** Never run `git push` or `firebase deploy`
+  without an explicit instruction. There is currently no auto-deploy workflow in
+  this repo, so pushing `main` does not update Firebase Hosting or Functions;
+  production changes require a separate manual deploy. Approval of the *work*
+  ("looks good", "ship it") is NOT permission to push or deploy. Do not create a
+  commit unless the user explicitly asks for one.
 - **Surgical changes only.** Keep edits focused on the request. No unrelated
   refactoring, reformatting, or drive-by dependency bumps.
 - **Mobile first.** This is a phone-first PWA (`manifest.json` is `standalone`,
