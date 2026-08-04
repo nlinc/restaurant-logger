@@ -21,6 +21,8 @@ const authScreen = document.getElementById('auth-screen');
 const appContainer = document.getElementById('app-container');
 const googleSignInBtn = document.getElementById('google-sign-in');
 const userAvatar = document.getElementById('user-avatar');
+const userAvatarImage = document.getElementById('user-avatar-image');
+const userAvatarFallback = document.getElementById('user-avatar-fallback');
 const signOutDropdown = document.getElementById('sign-out-dropdown');
 const signOutBtn = document.getElementById('sign-out-btn');
 
@@ -99,6 +101,12 @@ googleSignInBtn.addEventListener('click', async () => {
     googleSignInBtn.textContent = 'Signing in...';
 
     try {
+        if (shouldStartWithRedirectSignIn()) {
+            showToast('Opening Google sign-in...', 'info');
+            await signInWithRedirect(auth, googleProvider);
+            return;
+        }
+
         await signInWithPopup(auth, googleProvider);
     } catch (e) {
         console.error('Sign-in error:', e);
@@ -125,6 +133,13 @@ function shouldUseRedirectSignIn(error) {
         'auth/popup-blocked',
         'auth/operation-not-supported-in-this-environment'
     ].includes(error?.code);
+}
+
+function shouldStartWithRedirectSignIn() {
+    const isNarrowScreen = window.matchMedia('(max-width: 820px)').matches;
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+        || window.navigator.standalone === true;
+    return isNarrowScreen || isStandalone;
 }
 
 function getAuthErrorMessage(error) {
@@ -165,8 +180,7 @@ onAuthStateChanged(auth, (user) => {
         authScreen.style.display = 'none';
         appContainer.classList.add('active');
         aiFab.style.display = 'none';
-        userAvatar.src = user.photoURL || '';
-        userAvatar.alt = user.displayName || 'User';
+        renderUserAvatar(user);
         loadTastePreferences();
         renderPreferenceControls();
         renderPendingCheckin();
@@ -200,7 +214,7 @@ if (isLocalUiPreview) {
     };
     authScreen.style.display = 'none';
     appContainer.classList.add('active');
-    userAvatar.alt = currentUser.displayName;
+    renderUserAvatar(currentUser);
     loadTastePreferences();
     renderPreferenceControls();
     renderPendingCheckin();
@@ -208,6 +222,54 @@ if (isLocalUiPreview) {
     scanReceiptBtn.disabled = true;
     scanReceiptBtn.title = 'Receipt scanning is disabled in local UI preview.';
 }
+
+function renderUserAvatar(user) {
+    const displayName = user?.displayName?.trim() || 'User';
+    const initials = displayName
+        .split(/\s+/)
+        .slice(0, 2)
+        .map(part => part.charAt(0).toUpperCase())
+        .join('') || '?';
+
+    userAvatar.setAttribute('aria-label', `Open account menu for ${displayName}`);
+    userAvatar.title = displayName;
+    userAvatarFallback.textContent = initials;
+
+    if (user?.photoURL) {
+        userAvatarImage.src = user.photoURL;
+        userAvatarImage.hidden = false;
+        userAvatarFallback.hidden = true;
+    } else {
+        userAvatarImage.removeAttribute('src');
+        userAvatarImage.hidden = true;
+        userAvatarFallback.hidden = false;
+    }
+}
+
+userAvatarImage.addEventListener('error', () => {
+    userAvatarImage.removeAttribute('src');
+    userAvatarImage.hidden = true;
+    userAvatarFallback.hidden = false;
+});
+
+function setupHorizontalScrollAffordance(container) {
+    if (!container) return;
+    container.classList.add('horizontal-scroll-affordance');
+
+    const update = () => {
+        const maxScrollLeft = Math.max(0, container.scrollWidth - container.clientWidth);
+        container.classList.toggle('can-scroll-left', container.scrollLeft > 2);
+        container.classList.toggle('can-scroll-right', container.scrollLeft < maxScrollLeft - 2);
+    };
+
+    container.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    if ('ResizeObserver' in window) new ResizeObserver(update).observe(container);
+    requestAnimationFrame(update);
+}
+
+setupHorizontalScrollAffordance(occasionOptions);
+setupHorizontalScrollAffordance(aiMoodChips);
 
 // ===== Navigation =====
 navItems.forEach(item => {
@@ -710,12 +772,14 @@ async function handleSave(status) {
 
     try {
         const existing = selectedPlace.id ? selectedPlace : findExistingPlace(payload);
+        let savedPlaceId = existing?.id || null;
         if (existing) {
             if (status === 'visited' && ['wishlist', 'recommended', 'dismissed'].includes(existing.status)) {
                 await updateDoc(doc(db, "saved_places", existing.id), payload);
                 showToast(existing.status === 'wishlist' ? 'Wishlist item converted to visit.' : 'Recommendation converted to visit.', 'success');
             } else if (status === 'visited') {
-                await addDoc(collection(db, "saved_places"), payload);
+                const docRef = await addDoc(collection(db, "saved_places"), payload);
+                savedPlaceId = docRef.id;
                 showToast('Visit saved!', 'success');
             } else if (status === 'wishlist' && (!existing.status || existing.status === 'visited')) {
                 showToast('You already logged this place.', 'info');
@@ -732,7 +796,8 @@ async function handleSave(status) {
                 showToast('Added to Wishlist!', 'success');
             } else if (existing.status === 'dismissed') {
                 await deleteDoc(doc(db, "saved_places", existing.id));
-                await addDoc(collection(db, "saved_places"), payload);
+                const docRef = await addDoc(collection(db, "saved_places"), payload);
+                savedPlaceId = docRef.id;
                 showToast(status === 'visited' ? 'Visit saved!' : 'Added to Wishlist!', 'success');
             } else {
                 showToast('That place is already saved.', 'info');
@@ -741,9 +806,12 @@ async function handleSave(status) {
                 return false;
             }
         } else {
-            await addDoc(collection(db, "saved_places"), payload);
+            const docRef = await addDoc(collection(db, "saved_places"), payload);
+            savedPlaceId = docRef.id;
             showToast(status === 'visited' ? 'Visit saved!' : 'Added to Wishlist!', 'success');
         }
+
+        applySavedPlaceLocally(savedPlaceId, payload);
 
         // Reset form
         searchInput.value = '';
@@ -766,6 +834,23 @@ async function handleSave(status) {
         showToast('Failed to save. Please try again.', 'error');
         return false;
     }
+}
+
+function applySavedPlaceLocally(id, payload) {
+    if (!id) return;
+
+    const existingIndex = allPlaces.findIndex(place => place.id === id);
+    const savedPlace = {
+        ...(existingIndex >= 0 ? allPlaces[existingIndex] : {}),
+        id,
+        ...payload,
+        _localSavedAt: Date.now()
+    };
+
+    if (existingIndex >= 0) allPlaces.splice(existingIndex, 1, savedPlace);
+    else allPlaces.unshift(savedPlace);
+
+    updateViews();
 }
 
 // ===== Visit History =====
@@ -1088,7 +1173,7 @@ function getPlaceTime(place) {
     const ts = place.acted_at || place.recommended_at || place.visited_at;
     if (ts?.toMillis) return ts.toMillis();
     if (ts?.toDate) return ts.toDate().getTime();
-    return 0;
+    return place._localSavedAt || 0;
 }
 
 function renderWishlistCards(places) {
@@ -2342,7 +2427,7 @@ if ('serviceWorker' in navigator) {
             window.location.reload();
         });
 
-        navigator.serviceWorker.register('/sw.js?v=19')
+        navigator.serviceWorker.register('/sw.js?v=21')
             .then(reg => {
                 console.log('Service Worker registered successfully.', reg.scope);
 

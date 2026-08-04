@@ -7,7 +7,7 @@
     <title>Lincoln Eats — Dinner, Decided</title>
     <meta name="description" content="Get three nearby restaurant picks matched to your mood, then teach Lincoln your taste with one-tap feedback.">
     <meta name="theme-color" content="#0a0a0a">
-    <link rel="stylesheet" href="css/styles.css?v=19">
+    <link rel="stylesheet" href="css/styles.css?v=21">
     <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
     
     <!-- PWA Configurations -->
@@ -41,7 +41,10 @@
                 <h1>Lincoln Eats</h1>
             </div>
             <div style="position: relative;">
-                <img id="user-avatar" class="user-avatar" src="" alt="User avatar">
+                <button id="user-avatar" class="user-avatar" type="button" aria-label="Open account menu">
+                    <img id="user-avatar-image" alt="" hidden>
+                    <span id="user-avatar-fallback" aria-hidden="true">?</span>
+                </button>
                 <div id="sign-out-dropdown" class="sign-out-dropdown">
                     <button id="sign-out-btn">Sign Out</button>
                 </div>
@@ -315,7 +318,7 @@
         });
     </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script type="module" src="js/app.js?v=19"></script>
+    <script type="module" src="js/app.js?v=21"></script>
 </body>
 
 </html>
