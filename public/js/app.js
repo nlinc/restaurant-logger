@@ -5,7 +5,7 @@ import {
     query, where, orderBy, limit, onSnapshot, getDocs,
     signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged,
     httpsCallable, mapsApiKey
-} from './firebase-config.js?v=22';
+} from './firebase-config.js?v=23';
 
 // Dynamically load Google Maps script with obfuscated API key
 const mapsScript = document.createElement('script');
@@ -1059,11 +1059,26 @@ function renderHistoryFeed() {
         let orderHtmlString = '';
         const formattedOrderText = formatOrderItems(orderItems);
         if (formattedOrderText) {
-            orderHtmlString = `<p class="visit-card-order" style="font-size: 0.82rem; margin-bottom: 0.25rem; color: var(--text-primary);">🍽️ ${escapeHtml(formattedOrderText)}</p>`;
+            orderHtmlString = `<p class="visit-card-order">🍽️ ${escapeHtml(formattedOrderText)}</p>`;
         }
         if (totalAmount) {
-            orderHtmlString += `<p class="visit-card-total" style="font-size: 0.78rem; margin-bottom: 0.4rem; color: var(--text-secondary);">💰 <strong>Total:</strong> ${escapeHtml(totalAmount)}</p>`;
+            orderHtmlString += `<p class="visit-card-total">💰 <strong>Total:</strong> ${escapeHtml(totalAmount)}</p>`;
         }
+        const cleanNotes = cleanVisitNotes(visit.notes || '');
+        const notesHtml = cleanNotes ? `<p class="visit-card-notes">${escapeHtml(cleanNotes)}</p>` : '';
+        const shouldCollapseMealDetails = Boolean(orderHtmlString)
+            && (Boolean(visit.receipt) || formattedOrderText.length > 140 || cleanNotes.length > 180);
+        const mealDetailsHtml = shouldCollapseMealDetails
+            ? `
+                <details class="visit-meal-details">
+                    <summary>Meal details${orderItems.length ? ` · ${orderItems.length} items` : ''}</summary>
+                    <div class="visit-meal-details-content">
+                        ${orderHtmlString}
+                        ${notesHtml}
+                    </div>
+                </details>
+            `
+            : `${orderHtmlString}${notesHtml}`;
         
         // Stats are only relevant for personal visits
         let repeatHtml = '';
@@ -1082,8 +1097,7 @@ function renderHistoryFeed() {
                 </div>
             </div>
             ${stars ? `<div class="visit-card-stars">${stars}</div>` : ''}
-            ${orderHtmlString}
-            ${visit.notes ? `<p class="visit-card-notes">${escapeHtml(cleanVisitNotes(visit.notes))}</p>` : ''}
+            ${mealDetailsHtml}
             ${tagsHtml ? `<div class="visit-card-tags">${tagsHtml}</div>` : ''}
             ${renderCardActions(visit.name, visit.lat, visit.lng, visit.place_id, visit.address)}
         `;
@@ -1141,6 +1155,7 @@ function renderRecommendationPrompt(visited, wishlist) {
 function renderRecommendationHistory() {
     if (!recommendationHistory) return;
 
+    const wasOpen = recommendationHistory.querySelector('details')?.open || false;
     const recs = allPlaces
         .filter(place => place.source === 'ai_recommendation')
         .sort((a, b) => getPlaceTime(b) - getPlaceTime(a))
@@ -1152,13 +1167,20 @@ function renderRecommendationHistory() {
     }
 
     recommendationHistory.innerHTML = `
-        <div class="recommendation-history-title">Recent Suggestions</div>
-        ${recs.map(place => `
-            <div class="recommendation-history-item">
-                <span>${escapeHtml(place.name)}</span>
-                <strong>${escapeHtml(getRecommendationStatusLabel(place.status))}</strong>
+        <details class="recommendation-history-details"${wasOpen ? ' open' : ''}>
+            <summary>
+                <span>Recent suggestions</span>
+                <span class="recommendation-history-count">${recs.length}</span>
+            </summary>
+            <div class="recommendation-history-list">
+                ${recs.map(place => `
+                    <div class="recommendation-history-item">
+                        <span>${escapeHtml(place.name)}</span>
+                        <strong>${escapeHtml(getRecommendationStatusLabel(place.status))}</strong>
+                    </div>
+                `).join('')}
             </div>
-        `).join('')}
+        </details>
     `;
 }
 
@@ -1683,7 +1705,7 @@ function formatDate(date) {
 async function initMap() {
     await window._mapsReady;
 
-    const mapCenter = { lat: 40.7128, lng: -74.0060 }; // Default to NYC, will center on user
+    const mapCenter = { lat: 39.8283, lng: -98.5795 };
     
     map = new google.maps.Map(document.getElementById("map"), {
         zoom: 13,
@@ -1703,17 +1725,19 @@ async function initMap() {
     });
 
     // Try to get user location to center map
+    let centeredOnUser = false;
     try {
         const pos = await getUserLocation();
         map.setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        centeredOnUser = true;
     } catch (e) {
-        console.warn("Could not get location for map center");
+        console.warn("Could not get location; centering on recent saved places");
     }
 
-    updateMarkers();
+    updateMarkers({ fitToRecentArea: !centeredOnUser });
 }
 
-function updateMarkers() {
+function updateMarkers({ fitToRecentArea = false } = {}) {
     if (!map) return;
 
     // Clear existing
@@ -1792,6 +1816,32 @@ function updateMarkers() {
 
         markers.push(marker);
     });
+
+    if (fitToRecentArea) fitMapToRecentArea(placesToPlot);
+}
+
+function fitMapToRecentArea(places) {
+    const withCoordinates = places
+        .filter(place => Number.isFinite(place.lat) && Number.isFinite(place.lng));
+    if (withCoordinates.length === 0) return;
+
+    const ownPlaces = withCoordinates.filter(place => place.isMine);
+    const candidates = (ownPlaces.length ? ownPlaces : withCoordinates)
+        .sort((a, b) => getPlaceTime(b) - getPlaceTime(a));
+    const anchor = candidates[0];
+    const localPlaces = candidates.filter(place => (
+        calculateDistance(anchor.lat, anchor.lng, place.lat, place.lng) <= 80
+    ));
+
+    if (localPlaces.length === 1) {
+        map.setCenter({ lat: anchor.lat, lng: anchor.lng });
+        map.setZoom(13);
+        return;
+    }
+
+    const bounds = new google.maps.LatLngBounds();
+    localPlaces.forEach(place => bounds.extend({ lat: place.lat, lng: place.lng }));
+    map.fitBounds(bounds, 48);
 }
 
 // ===== Profile Logic =====
@@ -1817,9 +1867,15 @@ function renderProfile(places) {
     }
 
     // Top Cuisines
-    const cuisines = visited.flatMap(v => v.types || []).filter(t => !['restaurant', 'food', 'point_of_interest', 'establishment'].includes(t));
     const counts = {};
-    cuisines.forEach(c => counts[c] = (counts[c] || 0) + 1);
+    visited.forEach(visit => {
+        const cuisines = new Set(
+            [...(visit.types || []), ...(visit.tags || [])]
+                .map(getCuisineLabel)
+                .filter(Boolean)
+        );
+        cuisines.forEach(cuisine => counts[cuisine] = (counts[cuisine] || 0) + 1);
+    });
     const topCuisine = Object.entries(counts).sort((a,b) => b[1] - a[1])[0]?.[0] || 'Mixed';
 
     profileDashboard.innerHTML = `
@@ -1839,7 +1895,7 @@ function renderProfile(places) {
                 <span class="stat-label">Wishlist</span>
             </div>
             <div class="stat-card">
-                <span class="stat-value">${topCuisine.replace(/_/g, ' ')}</span>
+                <span class="stat-value">${topCuisine}</span>
                 <span class="stat-label">Top Cuisine</span>
             </div>
             <div class="stat-card">
@@ -1863,35 +1919,47 @@ function renderProfile(places) {
     }, 50);
 }
 
+function getCuisineLabel(value) {
+    const key = String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+    const aliases = {
+        american: 'American', new_american: 'American', southern: 'Southern',
+        mexican: 'Mexican', latin_american: 'Latin American',
+        indian: 'Indian', thai: 'Thai',
+        japanese: 'Japanese', sushi: 'Japanese',
+        italian: 'Italian', pizza: 'Italian',
+        mediterranean: 'Mediterranean', middle_eastern: 'Middle Eastern',
+        chinese: 'Chinese', korean: 'Korean', vietnamese: 'Vietnamese',
+        french: 'French', greek: 'Greek', spanish: 'Spanish',
+        ethiopian: 'Ethiopian', caribbean: 'Caribbean',
+        barbecue: 'Barbecue', bbq: 'Barbecue', seafood: 'Seafood',
+        vegan: 'Vegan', vegetarian: 'Vegetarian'
+    };
+    return aliases[key] || null;
+}
+
 function calculateTasteScores(visited) {
-    let spicy = 0, cozy = 0, casual = 0, healthy = 0, indulgent = 0;
-    
+    if (visited.length === 0) return [0, 0, 0, 0, 0];
+
+    const patterns = [
+        /spicy|hot|curry|bold|mexican|indian|thai|szechuan|chili|jalapeno/i,
+        /cozy|intimate|date|trendy|vibes|bar|drinks|cocktails|social|wine/i,
+        /burger|street|pizza|casual|quick|cheap|diner|sandwich|taco|fast/i,
+        /vegan|salad|vegetarian|clean|sushi|seafood|healthy|fresh|poke|bowl/i,
+        /bakery|dessert|sweet|chocolate|indulgent|pasta|cheese|cake|ice|pastry/i
+    ];
+    const matchedWeights = [0, 0, 0, 0, 0];
+    let totalWeight = 0;
+
     visited.forEach(v => {
         const text = ((v.notes || '') + ' ' + (v.tags || []).join(' ') + ' ' + (v.types || []).join(' ')).toLowerCase();
-        
-        if (/spicy|hot|curry|bold|mexican|indian|thai|szechuan|chili|jalapeno/i.test(text)) spicy += 20;
-        if (/cozy|intimate|date|trendy|vibes|bar|drinks|cocktails|social|wine/i.test(text)) cozy += 20;
-        if (/burger|street|pizza|casual|quick|cheap|diner|sandwich|taco|fast/i.test(text)) casual += 20;
-        if (/vegan|salad|vegetarian|clean|sushi|seafood|healthy|fresh|poke|bowl/i.test(text)) healthy += 20;
-        if (/bakery|dessert|sweet|chocolate|indulgent|pasta|cheese|cake|ice|pastry/i.test(text)) indulgent += 20;
-        
-        if (v.user_rating === 3) {
-            if (/spicy|hot|curry|bold|mexican|indian|thai|szechuan/i.test(text)) spicy += 10;
-            if (/cozy|intimate|date|trendy|vibes|bar|drinks|cocktails/i.test(text)) cozy += 10;
-            if (/burger|street|pizza|casual|quick|cheap/i.test(text)) casual += 10;
-            if (/vegan|salad|vegetarian|clean|sushi|healthy/i.test(text)) healthy += 10;
-            if (/bakery|dessert|sweet|pasta|cheese/i.test(text)) indulgent += 10;
-        }
+        const weight = v.user_rating === 3 ? 1.25 : v.user_rating === 2 ? 0.85 : v.user_rating === 1 ? 0.25 : 0.6;
+        totalWeight += weight;
+        patterns.forEach((pattern, index) => {
+            if (pattern.test(text)) matchedWeights[index] += weight;
+        });
     });
 
-    const baseline = visited.length > 0 ? 15 : 0;
-    return [
-        Math.min(100, Math.max(baseline, spicy)),
-        Math.min(100, Math.max(baseline, cozy)),
-        Math.min(100, Math.max(baseline, casual)),
-        Math.min(100, Math.max(baseline, healthy)),
-        Math.min(100, Math.max(baseline, indulgent))
-    ];
+    return matchedWeights.map(weight => Math.round(10 + (weight / totalWeight) * 90));
 }
 
 function initTasteRadar(scores) {
@@ -2427,7 +2495,7 @@ if ('serviceWorker' in navigator) {
             window.location.reload();
         });
 
-        navigator.serviceWorker.register('/sw.js?v=22')
+        navigator.serviceWorker.register('/sw.js?v=23')
             .then(reg => {
                 console.log('Service Worker registered successfully.', reg.scope);
 

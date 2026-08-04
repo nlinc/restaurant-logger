@@ -503,6 +503,33 @@ body {
   margin-bottom: 0.35rem;
 }
 
+.visit-card-total {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  margin-bottom: 0.4rem;
+}
+
+.visit-meal-details {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 0.45rem;
+}
+
+.visit-meal-details summary {
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 700;
+  list-style-position: inside;
+  padding: 0.6rem 0.7rem;
+}
+
+.visit-meal-details-content {
+  border-top: 1px solid var(--border);
+  padding: 0.65rem 0.7rem 0.25rem;
+}
+
 .visit-card-tags {
   display: flex;
   flex-wrap: wrap;
@@ -615,21 +642,47 @@ body {
 .recommendation-history {
   border-top: 1px solid var(--border);
   margin-top: 0.85rem;
-  padding-top: 0.75rem;
 }
 
 .recommendation-history:empty {
   display: none;
 }
 
-.recommendation-history-title {
+.recommendation-history-details summary {
+  align-items: center;
   color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
   font-size: 0.72rem;
   font-weight: 700;
+  justify-content: space-between;
   letter-spacing: 0.05em;
-  margin-bottom: 0.45rem;
+  list-style: none;
+  padding: 0.75rem 0 0.15rem;
   text-transform: uppercase;
 }
+
+.recommendation-history-details summary::-webkit-details-marker { display: none; }
+
+.recommendation-history-details summary::after {
+  content: '＋';
+  font-size: 0.9rem;
+  margin-left: 0.45rem;
+}
+
+.recommendation-history-details[open] summary::after { content: '−'; }
+
+.recommendation-history-count {
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  margin-left: auto;
+  padding: 0.1rem 0.4rem;
+}
+
+.recommendation-history-list { padding-top: 0.35rem; }
 
 .recommendation-history-item {
   align-items: center;
