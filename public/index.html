@@ -7,7 +7,7 @@
     <title>Lincoln Eats — Dinner, Decided</title>
     <meta name="description" content="Get three nearby restaurant picks matched to your mood, then teach Lincoln your taste with one-tap feedback.">
     <meta name="theme-color" content="#0a0a0a">
-    <link rel="stylesheet" href="css/styles.css?v=16">
+    <link rel="stylesheet" href="css/styles.css?v=17">
     <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
     
     <!-- PWA Configurations -->
@@ -126,9 +126,9 @@
                 <div class="quick-log-content">
                     <div class="quick-log-heading">
                         <p class="section-title">Quick log</p>
-                        <button id="scan-receipt-btn" class="scan-receipt-btn">Scan Receipt</button>
+                        <button id="scan-receipt-btn" class="scan-receipt-btn" type="button">Scan or upload receipt</button>
                     </div>
-                    <input type="file" id="receipt-file-input" accept="image/*" capture="environment" style="display: none;">
+                    <input type="file" id="receipt-file-input" accept="image/*" class="visually-hidden" aria-label="Choose a receipt photo">
                     <div class="log-card">
                         <div class="form-group">
                             <label for="restaurant-search">Restaurant</label>
@@ -304,7 +304,7 @@
         });
     </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script type="module" src="js/app.js?v=16"></script>
+    <script type="module" src="js/app.js?v=17"></script>
 </body>
 
 </html>

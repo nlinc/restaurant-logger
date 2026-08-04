@@ -498,11 +498,7 @@ receiptFileInput.addEventListener('change', async (e) => {
     showToast('Uploading image to Gemini...', 'info');
 
     try {
-        const base64Data = await convertFileToBase64(file);
-        
-        // Strip out metadata prefix (e.g. data:image/png;base64,)
-        const rawBase64 = base64Data.split(',')[1];
-        const mimeType = file.type;
+        const { base64: rawBase64, mimeType } = await prepareReceiptImage(file);
 
         // Call our scanReceipt Cloud Function
         const scanReceiptFn = httpsCallable(functions, 'scanReceipt');
@@ -552,7 +548,10 @@ receiptFileInput.addEventListener('change', async (e) => {
 
     } catch (err) {
         console.error("Receipt Scanner Error:", err);
-        showToast('Receipt scanning failed. Please try again.', 'error');
+        const message = err instanceof Error && err.message
+            ? err.message
+            : 'Receipt scanning failed. Please try again.';
+        showToast(message, 'error');
     } finally {
         scanReceiptBtn.disabled = false;
         scanReceiptBtn.textContent = originalText;
@@ -577,12 +576,70 @@ function applyReceiptDetailsToForm(receipt) {
     }
 }
 
-function convertFileToBase64(file) {
+async function prepareReceiptImage(file) {
+    if (!file.type.startsWith('image/')) {
+        throw new Error('Please choose a receipt photo.');
+    }
+
+    let image;
+    let objectUrl;
+
+    try {
+        if ('createImageBitmap' in window) {
+            try {
+                image = await createImageBitmap(file);
+            } catch (error) {
+                console.warn('createImageBitmap could not decode the receipt; trying the browser image decoder.', error);
+            }
+        }
+        if (!image) {
+            objectUrl = URL.createObjectURL(file);
+            image = await loadReceiptImage(objectUrl);
+        }
+
+        const sourceWidth = image.naturalWidth || image.width;
+        const sourceHeight = image.naturalHeight || image.height;
+        if (!sourceWidth || !sourceHeight) {
+            throw new Error('That image could not be read. Try a JPG, PNG, or WebP photo.');
+        }
+
+        const maxDimension = 1800;
+        const scale = Math.min(1, maxDimension / Math.max(sourceWidth, sourceHeight));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+        canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+
+        const context = canvas.getContext('2d');
+        if (!context) {
+            throw new Error('This browser could not prepare the receipt photo.');
+        }
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+        const base64 = dataUrl.split(',')[1];
+        if (!base64) {
+            throw new Error('This browser could not prepare the receipt photo.');
+        }
+
+        return { base64, mimeType: 'image/jpeg' };
+    } catch (error) {
+        if (error instanceof Error && error.message.startsWith('That image')) throw error;
+        if (error instanceof Error && error.message.startsWith('This browser')) throw error;
+        throw new Error('That image could not be read. Try a JPG, PNG, or WebP photo.');
+    } finally {
+        if (typeof image?.close === 'function') image.close();
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+    }
+}
+
+function loadReceiptImage(src) {
     return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = error => reject(error);
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error('Image decode failed.'));
+        image.src = src;
     });
 }
 
@@ -2234,7 +2291,7 @@ if ('serviceWorker' in navigator) {
             window.location.reload();
         });
 
-        navigator.serviceWorker.register('/sw.js?v=16')
+        navigator.serviceWorker.register('/sw.js?v=17')
             .then(reg => {
                 console.log('Service Worker registered successfully.', reg.scope);
                 reg.update();
