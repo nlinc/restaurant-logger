@@ -7,7 +7,7 @@
     <title>Lincoln Eats — Food, Decided</title>
     <meta name="description" content="Get three nearby restaurant picks matched to your mood, then teach Lincoln your taste with one-tap feedback.">
     <meta name="theme-color" content="#0a0a0a">
-    <link rel="stylesheet" href="css/styles.css?v=24">
+    <link rel="stylesheet" href="css/styles.css?v=25">
     <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
     
     <!-- PWA Configurations -->
@@ -74,6 +74,11 @@
                     <button class="occasion-chip" data-vibe="treat" aria-pressed="false">🥂 Treat</button>
                 </div>
 
+                <div class="decision-location" role="status" aria-live="polite">
+                    <span id="decision-location-status">📍 Location checked when you find picks</span>
+                    <button id="change-location-btn" type="button">Change</button>
+                </div>
+
                 <div class="home-primary-actions">
                     <button id="get-recommendation-btn" class="decision-primary">Find dinner picks</button>
                     <button id="open-quick-log-btn" class="decision-log-primary" type="button" aria-controls="quick-log-panel">＋ Log a place</button>
@@ -121,6 +126,15 @@
                             <button data-preference-value="5">5 mi</button>
                             <button data-preference-value="10">10 mi</button>
                         </div>
+                    </fieldset>
+
+                    <fieldset class="preference-group">
+                        <legend>Search near</legend>
+                        <div class="location-preference-controls">
+                            <input id="location-override-search" type="text" autocomplete="off" placeholder="City, neighborhood, or address">
+                            <button id="use-current-location-btn" type="button">Use current location</button>
+                        </div>
+                        <p class="location-preference-help" id="location-preference-help">Use precise device location, or choose a place manually when it looks wrong.</p>
                     </fieldset>
 
                     <button id="save-preferences-btn" class="preference-save-btn">Use these preferences</button>
@@ -326,7 +340,7 @@
         });
     </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script type="module" src="js/app.js?v=24"></script>
+    <script type="module" src="js/app.js?v=25"></script>
 </body>
 
 </html>

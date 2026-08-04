@@ -19,9 +19,9 @@ Keep changes conservative and preserve the existing structure.
   log the visit directly or from a receipt. Logging and recommendations are
   equally prominent, while historical entry remains optional for recommendations.
 - **Cold start:** explicit cuisines, typical budget, distance, current mood, and
-  location are enough to make starter picks. Taste preferences and the pending
-  check-in are currently versioned, per-user `localStorage` data on that device;
-  no Firestore profile collection exists.
+  location are enough to make starter picks. Taste preferences, a manual
+  location override, and the pending check-in are currently versioned, per-user
+  `localStorage` data on that device; no Firestore profile collection exists.
 - **Beta success metrics:** weekly sessions where a user taps **Let's go** on a
   recommendation and weekly completed visit logs, with one-tap check-in completion
   as a supporting measure.

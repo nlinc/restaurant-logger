@@ -5,7 +5,7 @@ import {
     query, where, orderBy, limit, onSnapshot, getDocs,
     signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged,
     httpsCallable, mapsApiKey
-} from './firebase-config.js?v=24';
+} from './firebase-config.js?v=25';
 
 // Dynamically load Google Maps script with obfuscated API key
 const mapsScript = document.createElement('script');
@@ -46,9 +46,14 @@ const homeRecommendations = document.getElementById('home-recommendations');
 const recommendationHistory = document.getElementById('recommendation-history');
 const mealOptions = document.getElementById('meal-options');
 const occasionOptions = document.getElementById('occasion-options');
+const decisionLocationStatus = document.getElementById('decision-location-status');
+const changeLocationBtn = document.getElementById('change-location-btn');
 const togglePreferencesBtn = document.getElementById('toggle-preferences-btn');
 const preferencePanel = document.getElementById('preference-panel');
 const savePreferencesBtn = document.getElementById('save-preferences-btn');
+const locationOverrideSearch = document.getElementById('location-override-search');
+const useCurrentLocationBtn = document.getElementById('use-current-location-btn');
+const locationPreferenceHelp = document.getElementById('location-preference-help');
 const pendingCheckin = document.getElementById('pending-checkin');
 const quickLogPanel = document.getElementById('quick-log-panel');
 
@@ -77,6 +82,7 @@ let currentUser = null;
 let selectedPlace = null;
 let tags = [];
 let autocomplete = null;
+let locationAutocomplete = null;
 let map = null;
 let markers = [];
 let allPlaces = [];
@@ -94,8 +100,11 @@ let scannedReceiptData = null;
 let selectedMealPeriod = getDefaultMealPeriod();
 let selectedVibe = 'anything';
 let tastePreferences = getDefaultTastePreferences();
+let manualLocationOverride = null;
+let lastResolvedLocation = null;
 let pendingChoiceSavePromise = null;
 const recommendationCache = new Map();
+const MAX_PRECISE_LOCATION_METERS = 805;
 
 // ===== Auth =====
 googleSignInBtn.addEventListener('click', async () => {
@@ -186,6 +195,8 @@ onAuthStateChanged(auth, (user) => {
         renderUserAvatar(user);
         loadTastePreferences();
         renderPreferenceControls();
+        loadLocationPreference();
+        renderLocationStatus();
         renderPendingCheckin();
         listenToHistory();
         listenToCircle();
@@ -220,6 +231,8 @@ if (isLocalUiPreview) {
     renderUserAvatar(currentUser);
     loadTastePreferences();
     renderPreferenceControls();
+    loadLocationPreference();
+    renderLocationStatus();
     renderPendingCheckin();
     updateViews();
     scanReceiptBtn.disabled = true;
@@ -371,10 +384,50 @@ async function setupAutocomplete() {
     });
 
     autocomplete.addListener('place_changed', onPlaceChanged);
+
+    locationAutocomplete = new google.maps.places.Autocomplete(locationOverrideSearch, {
+        types: ['geocode'],
+        fields: ['geometry', 'name', 'formatted_address', 'address_components']
+    });
+    locationAutocomplete.addListener('place_changed', onLocationOverrideChanged);
+
+    if (manualLocationOverride) setRestaurantAutocompleteBias(manualLocationOverride);
     console.log('Places Autocomplete initialized.');
 }
 
 setupAutocomplete();
+
+searchInput.addEventListener('focus', async () => {
+    if (selectedPlace || manualLocationOverride || lastResolvedLocation) return;
+    try {
+        const location = await resolveDiningLocation({ requirePrecise: true });
+        updateResolvedLocation(location);
+    } catch (error) {
+        renderLocationError(error);
+    }
+});
+
+function onLocationOverrideChanged() {
+    const place = locationAutocomplete.getPlace();
+    const lat = place.geometry?.location?.lat();
+    const lng = place.geometry?.location?.lng();
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        showToast('Choose a location from the suggestion list.', 'info');
+        return;
+    }
+
+    manualLocationOverride = {
+        lat,
+        lng,
+        label: getPlaceLocationLabel(place),
+        source: 'manual',
+        accuracy: null
+    };
+    saveLocationPreference();
+    updateResolvedLocation(manualLocationOverride);
+    locationOverrideSearch.value = manualLocationOverride.label;
+    showToast(`Searching near ${manualLocationOverride.label}.`, 'success');
+}
 
 
 function onPlaceChanged() {
@@ -470,6 +523,35 @@ occasionOptions.addEventListener('click', (e) => {
     renderDecisionControls();
 });
 
+changeLocationBtn.addEventListener('click', () => {
+    preferencePanel.hidden = false;
+    togglePreferencesBtn.setAttribute('aria-expanded', 'true');
+    togglePreferencesBtn.textContent = 'Hide taste settings';
+    requestAnimationFrame(() => locationOverrideSearch.focus());
+});
+
+useCurrentLocationBtn.addEventListener('click', async () => {
+    const originalText = useCurrentLocationBtn.textContent;
+    useCurrentLocationBtn.disabled = true;
+    useCurrentLocationBtn.textContent = 'Locating…';
+    locationPreferenceHelp.textContent = 'Requesting a fresh, precise device location…';
+
+    try {
+        const location = await resolveDeviceLocation({ requirePrecise: true });
+        manualLocationOverride = null;
+        saveLocationPreference();
+        locationOverrideSearch.value = '';
+        updateResolvedLocation(location);
+        showToast('Using your current precise location.', 'success');
+    } catch (error) {
+        renderLocationError(error);
+        showToast(getLocationErrorMessage(error), 'error');
+    } finally {
+        useCurrentLocationBtn.disabled = false;
+        useCurrentLocationBtn.textContent = originalText;
+    }
+});
+
 togglePreferencesBtn.addEventListener('click', () => {
     const willOpen = preferencePanel.hidden;
     preferencePanel.hidden = !willOpen;
@@ -493,6 +575,8 @@ preferencePanel.addEventListener('click', (e) => {
         tastePreferences.priceLevel = Number(value);
     } else if (group === 'maxDistanceMiles') {
         tastePreferences.maxDistanceMiles = Number(value);
+        const activeLocation = manualLocationOverride || lastResolvedLocation;
+        if (activeLocation) setRestaurantAutocompleteBias(activeLocation);
     }
     renderPreferenceControls();
 });
@@ -555,6 +639,8 @@ function resetUserScopedClientState() {
     selectedMealPeriod = getDefaultMealPeriod();
     selectedVibe = 'anything';
     tastePreferences = getDefaultTastePreferences();
+    manualLocationOverride = null;
+    lastResolvedLocation = null;
     recommendationCache.clear();
     homeRecommendations.innerHTML = '';
     recommendationHistory.innerHTML = '';
@@ -565,6 +651,7 @@ function resetUserScopedClientState() {
     document.querySelectorAll('.category-rating input').forEach(input => { input.checked = false; });
     renderTags();
     renderDecisionControls();
+    renderLocationStatus();
     updateSaveBtn();
 }
 
@@ -587,6 +674,165 @@ function renderPreferenceControls() {
             : Number(tastePreferences[group]) === Number(value);
         option.classList.toggle('active', active);
         option.setAttribute('aria-pressed', String(active));
+    });
+}
+
+function getLocationStorageKey() {
+    return currentUser ? `lincolnEats:location:v1:${currentUser.uid}` : null;
+}
+
+function loadLocationPreference() {
+    manualLocationOverride = null;
+    const key = getLocationStorageKey();
+    if (!key) return;
+
+    try {
+        const stored = JSON.parse(localStorage.getItem(key) || 'null');
+        if (stored?.version !== 1 || !Number.isFinite(stored.lat) || !Number.isFinite(stored.lng)) return;
+        manualLocationOverride = {
+            lat: stored.lat,
+            lng: stored.lng,
+            label: String(stored.label || 'Saved location').slice(0, 160),
+            source: 'manual',
+            accuracy: null
+        };
+        locationOverrideSearch.value = manualLocationOverride.label;
+        if (autocomplete) setRestaurantAutocompleteBias(manualLocationOverride);
+    } catch (error) {
+        console.warn('Could not load saved location:', error);
+    }
+}
+
+function saveLocationPreference() {
+    const key = getLocationStorageKey();
+    if (!key) return;
+
+    try {
+        if (!manualLocationOverride) {
+            localStorage.removeItem(key);
+            return;
+        }
+        localStorage.setItem(key, JSON.stringify({
+            version: 1,
+            lat: manualLocationOverride.lat,
+            lng: manualLocationOverride.lng,
+            label: manualLocationOverride.label
+        }));
+    } catch (error) {
+        console.warn('Could not save location preference:', error);
+    }
+}
+
+function renderLocationStatus(location = manualLocationOverride || lastResolvedLocation) {
+    if (!decisionLocationStatus || !locationPreferenceHelp) return;
+
+    if (!location) {
+        decisionLocationStatus.textContent = '📍 Location checked when you find picks';
+        locationPreferenceHelp.textContent = 'Use precise device location, or choose a place manually when it looks wrong.';
+        return;
+    }
+
+    if (location.source === 'manual') {
+        decisionLocationStatus.textContent = `📍 Searching near ${location.label}`;
+        locationPreferenceHelp.textContent = `Manual location saved on this device: ${location.label}`;
+        return;
+    }
+
+    const accuracy = formatLocationAccuracy(location.accuracy);
+    const label = location.label || 'current location';
+    decisionLocationStatus.textContent = `📍 Current: ${label}${accuracy ? ` · ${accuracy}` : ''}`;
+    locationPreferenceHelp.textContent = `Using fresh device location${accuracy ? ` (${accuracy})` : ''}.`;
+}
+
+function renderLocationError(error) {
+    const message = getLocationErrorMessage(error);
+    decisionLocationStatus.textContent = `⚠️ ${message}`;
+    locationPreferenceHelp.textContent = `${message} Choose a city, neighborhood, or address above instead.`;
+}
+
+function getLocationErrorMessage(error) {
+    if (error?.code === 'location-imprecise') {
+        const accuracy = formatLocationAccuracy(error.accuracy);
+        return `Device location is too broad${accuracy ? ` (${accuracy})` : ''}.`;
+    }
+    if (error?.code === 1) return 'Location permission is off.';
+    if (error?.code === 3) return 'Precise location timed out.';
+    return 'Could not determine your current location.';
+}
+
+function formatLocationAccuracy(meters) {
+    if (!Number.isFinite(meters) || meters <= 0) return '';
+    if (meters < 1609.344) {
+        const feet = Math.max(50, Math.round((meters * 3.28084) / 50) * 50);
+        return `accurate to about ${feet.toLocaleString()} ft`;
+    }
+    return `accurate to about ${(meters / 1609.344).toFixed(1)} mi`;
+}
+
+function getPlaceLocationLabel(place) {
+    return String(place.formatted_address || place.name || 'Selected location').slice(0, 160);
+}
+
+function setRestaurantAutocompleteBias(location) {
+    if (!autocomplete || !window.google?.maps || !Number.isFinite(location?.lat) || !Number.isFinite(location?.lng)) return;
+    const radiusMeters = milesToKm(tastePreferences.maxDistanceMiles || 5) * 1000;
+    const bounds = new google.maps.Circle({
+        center: { lat: location.lat, lng: location.lng },
+        radius: radiusMeters
+    }).getBounds();
+    autocomplete.setBounds(bounds);
+    autocomplete.setOptions({ strictBounds: false });
+}
+
+async function resolveDiningLocation({ requirePrecise = true } = {}) {
+    if (manualLocationOverride) return manualLocationOverride;
+    return resolveDeviceLocation({ requirePrecise });
+}
+
+async function resolveDeviceLocation({ requirePrecise = false } = {}) {
+    const position = await getUserLocation();
+    const lat = position?.coords?.latitude;
+    const lng = position?.coords?.longitude;
+    const accuracy = position?.coords?.accuracy;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error('Invalid device location');
+
+    if (requirePrecise && (!Number.isFinite(accuracy) || accuracy > MAX_PRECISE_LOCATION_METERS)) {
+        const error = new Error('Device location is too imprecise');
+        error.code = 'location-imprecise';
+        error.accuracy = accuracy;
+        throw error;
+    }
+
+    return { lat, lng, accuracy, label: '', source: 'device' };
+}
+
+function updateResolvedLocation(location) {
+    lastResolvedLocation = location;
+    setRestaurantAutocompleteBias(location);
+    renderLocationStatus(location);
+
+    if (location.source === 'device' && !location.label) {
+        reverseGeocodeLocation(location).then(label => {
+            if (!label || lastResolvedLocation !== location) return;
+            location.label = label;
+            renderLocationStatus(location);
+        });
+    }
+}
+
+function reverseGeocodeLocation(location) {
+    if (!window.google?.maps?.Geocoder) return Promise.resolve('');
+    const geocoder = new google.maps.Geocoder();
+    return new Promise(resolve => {
+        geocoder.geocode({ location: { lat: location.lat, lng: location.lng } }, (results, status) => {
+            if (status !== 'OK' || !results?.length) return resolve('');
+            const components = results[0].address_components || [];
+            const findComponent = type => components.find(component => component.types.includes(type));
+            const neighborhood = findComponent('neighborhood')?.long_name || findComponent('sublocality')?.long_name;
+            const city = findComponent('locality')?.long_name;
+            const region = findComponent('administrative_area_level_1')?.short_name;
+            resolve([neighborhood, city, region].filter((value, index, values) => value && values.indexOf(value) === index).join(', '));
+        });
     });
 }
 
@@ -1317,16 +1563,20 @@ async function handleHomeRecommendations() {
     }
 
     try {
-        const pos = await getUserLocation().catch(() => null);
-        if (!pos) {
-            homeRecommendations.innerHTML = '<div class="inline-empty">Turn on location for nearby picks, or ask Lincoln with your neighborhood or city.</div>';
+        let location;
+        try {
+            location = await resolveDiningLocation({ requirePrecise: true });
+            updateResolvedLocation(location);
+        } catch (locationError) {
+            renderLocationError(locationError);
+            homeRecommendations.innerHTML = `<div class="inline-empty">${escapeHtml(getLocationErrorMessage(locationError))} Use Change to choose where to search.</div>`;
             return;
         }
         const result = await requestRecommendations({
             mode: 'three_lanes',
             message: `Help me choose where to eat now. I want ${selectedMealPeriod} with a ${selectedVibe} vibe.`,
-            lat: pos?.coords?.latitude || null,
-            lng: pos?.coords?.longitude || null,
+            lat: location.lat,
+            lng: location.lng,
             mealPeriod: selectedMealPeriod,
             vibe: selectedVibe,
             preferences: tastePreferences
@@ -2498,8 +2748,9 @@ function getUserLocation() {
     return new Promise((resolve, reject) => {
         if (!navigator.geolocation) return reject(new Error('No geolocation'));
         navigator.geolocation.getCurrentPosition(resolve, reject, {
-            enableHighAccuracy: false,
-            timeout: 8000
+            enableHighAccuracy: true,
+            maximumAge: 0,
+            timeout: 15000
         });
     });
 }
@@ -2555,7 +2806,7 @@ if ('serviceWorker' in navigator) {
             window.location.reload();
         });
 
-        navigator.serviceWorker.register('/sw.js?v=24')
+        navigator.serviceWorker.register('/sw.js?v=25')
             .then(reg => {
                 console.log('Service Worker registered successfully.', reg.scope);
 
