@@ -5,7 +5,7 @@ import {
     query, where, orderBy, limit, onSnapshot, getDocs,
     signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged,
     httpsCallable, mapsApiKey
-} from './firebase-config.js';
+} from './firebase-config.js?v=22';
 
 // Dynamically load Google Maps script with obfuscated API key
 const mapsScript = document.createElement('script');
@@ -2427,7 +2427,7 @@ if ('serviceWorker' in navigator) {
             window.location.reload();
         });
 
-        navigator.serviceWorker.register('/sw.js?v=21')
+        navigator.serviceWorker.register('/sw.js?v=22')
             .then(reg => {
                 console.log('Service Worker registered successfully.', reg.scope);
 

@@ -8,7 +8,7 @@ export const mapsApiKey = ["AIzaSyDfMC08n", "Ucjpt84bjrCGPP5yXbRjTi_huQ"].join('
 
 const firebaseConfig = {
   apiKey: mapsApiKey,
-  authDomain: "lincoln-eats-77229.firebaseapp.com",
+  authDomain: "lincoln-eats-77229.web.app",
   projectId: "lincoln-eats-77229",
   storageBucket: "lincoln-eats-77229.firebasestorage.app",
   messagingSenderId: "420653959599",
