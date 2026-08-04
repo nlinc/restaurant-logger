@@ -456,11 +456,25 @@ exports.scanReceipt = onCall({ secrets: [geminiApiKey], cors: true, invoker: "pu
         if (!base64 || !mimeType) {
             throw new Error("Base64 string and mimeType are required.");
         }
+        const supportedMimeTypes = new Set([
+            "application/pdf",
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/heic",
+            "image/heif"
+        ]);
+        if (!supportedMimeTypes.has(mimeType)) {
+            throw new Error("Choose a supported receipt photo or PDF.");
+        }
+        if (typeof base64 !== "string" || base64.length > 12000000) {
+            throw new Error("That receipt file is too large.");
+        }
 
         const apiKey = geminiApiKey.value();
         const ai = new GoogleGenAI({ apiKey });
 
-const prompt = `Analyze this uploaded image (which is a restaurant receipt or menu) and extract:
+const prompt = `Analyze this uploaded receipt or menu image/PDF and extract:
 1. The restaurant's name.
 2. An inferred dining rating on our 1 to 3 scale (3: Loved it / High spending/great dishes, 2: Good/standard, 1: Disliked/Skip it). If you can't tell, default to 2.
 3. Relevant cuisine tags (e.g. "sushi", "tacos", "italian", "dessert") and dining style tags (e.g., "brunch", "fine-dining", "dinner"). Output 2-4 tags.
@@ -484,7 +498,7 @@ OUTPUT: Return ONLY a valid JSON object matching this schema, without Markdown f
 }`;
 
         // Call Gemini with multimodal support
-        console.log("Calling gemini-2.5-flash with image content...");
+        console.log("Calling gemini-2.5-flash with receipt content...");
         const result = await ai.models.generateContent({
             model: "gemini-2.5-flash",
             contents: [

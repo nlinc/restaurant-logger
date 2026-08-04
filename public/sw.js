@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lincoln-eats-v17';
+const CACHE_NAME = 'lincoln-eats-v18';
 const ASSETS = [
   '/',
   '/index.html',
@@ -17,7 +17,7 @@ self.addEventListener('install', (e) => {
   e.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(ASSETS);
-    }).then(() => self.skipWaiting())
+    })
   );
 });
 

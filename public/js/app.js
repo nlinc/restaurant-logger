@@ -37,6 +37,7 @@ const wishlistBtn = document.getElementById('wishlist-btn');
 const emptyState = document.getElementById('empty-state');
 const nextPickCopy = document.getElementById('next-pick-copy');
 const getRecommendationBtn = document.getElementById('get-recommendation-btn');
+const openQuickLogBtn = document.getElementById('open-quick-log-btn');
 const openConciergeBtn = document.getElementById('open-concierge-btn');
 const homeRecommendations = document.getElementById('home-recommendations');
 const recommendationHistory = document.getElementById('recommendation-history');
@@ -64,6 +65,8 @@ const scanReceiptBtn = document.getElementById('scan-receipt-btn');
 const receiptFileInput = document.getElementById('receipt-file-input');
 
 const toast = document.getElementById('toast');
+const appUpdateBanner = document.getElementById('app-update-banner');
+const refreshAppBtn = document.getElementById('refresh-app-btn');
 
 // ===== State =====
 let currentUser = null;
@@ -347,6 +350,10 @@ function updateSaveBtn() {
 saveBtn.addEventListener('click', () => handleSave('visited'));
 wishlistBtn.addEventListener('click', () => handleSave('wishlist'));
 getRecommendationBtn.addEventListener('click', handleHomeRecommendations);
+openQuickLogBtn.addEventListener('click', () => {
+    quickLogPanel.open = true;
+    requestAnimationFrame(() => quickLogPanel.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+});
 openConciergeBtn.addEventListener('click', openAiModal);
 
 occasionOptions.addEventListener('click', (e) => {
@@ -495,10 +502,10 @@ receiptFileInput.addEventListener('change', async (e) => {
     const originalText = scanReceiptBtn.textContent;
     scanReceiptBtn.disabled = true;
     scanReceiptBtn.textContent = '⏳ Scanning with AI...';
-    showToast('Uploading image to Gemini...', 'info');
+    showToast('Preparing receipt for scanning...', 'info');
 
     try {
-        const { base64: rawBase64, mimeType } = await prepareReceiptImage(file);
+        const { base64: rawBase64, mimeType } = await prepareReceiptFile(file);
 
         // Call our scanReceipt Cloud Function
         const scanReceiptFn = httpsCallable(functions, 'scanReceipt');
@@ -577,10 +584,6 @@ function applyReceiptDetailsToForm(receipt) {
 }
 
 async function prepareReceiptImage(file) {
-    if (!file.type.startsWith('image/')) {
-        throw new Error('Please choose a receipt photo.');
-    }
-
     let image;
     let objectUrl;
 
@@ -632,6 +635,40 @@ async function prepareReceiptImage(file) {
         if (typeof image?.close === 'function') image.close();
         if (objectUrl) URL.revokeObjectURL(objectUrl);
     }
+}
+
+async function prepareReceiptFile(file) {
+    const fileName = file.name.toLowerCase();
+    const isPdf = file.type === 'application/pdf' || fileName.endsWith('.pdf');
+    const isImage = file.type.startsWith('image/')
+        || /\.(jpe?g|png|webp|heic|heif)$/.test(fileName);
+
+    if (isPdf) {
+        const maxPdfBytes = 8 * 1024 * 1024;
+        if (file.size > maxPdfBytes) {
+            throw new Error('That PDF is too large. Choose one under 8 MB.');
+        }
+        return {
+            base64: await readFileAsBase64(file),
+            mimeType: 'application/pdf'
+        };
+    }
+
+    if (isImage) return prepareReceiptImage(file);
+    throw new Error('Choose a receipt photo or PDF.');
+}
+
+function readFileAsBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const base64 = typeof reader.result === 'string' ? reader.result.split(',')[1] : '';
+            if (base64) resolve(base64);
+            else reject(new Error('That PDF could not be read.'));
+        };
+        reader.onerror = () => reject(new Error('That PDF could not be read.'));
+        reader.readAsDataURL(file);
+    });
 }
 
 function loadReceiptImage(src) {
@@ -2282,22 +2319,35 @@ function escapeHtml(text) {
 // Register Service Worker for PWA installation
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
+        let waitingWorker = null;
         let refreshing = false;
         const hadController = !!navigator.serviceWorker.controller;
+
+        const showUpdateBanner = worker => {
+            waitingWorker = worker;
+            appUpdateBanner.hidden = false;
+        };
+
+        refreshAppBtn.addEventListener('click', () => {
+            if (!waitingWorker) return;
+            refreshAppBtn.disabled = true;
+            refreshAppBtn.textContent = 'Refreshing…';
+            waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+        });
+
         navigator.serviceWorker.addEventListener('controllerchange', () => {
-            if (!hadController) return;
+            if (!hadController && !waitingWorker) return;
             if (refreshing) return;
             refreshing = true;
             window.location.reload();
         });
 
-        navigator.serviceWorker.register('/sw.js?v=17')
+        navigator.serviceWorker.register('/sw.js?v=18')
             .then(reg => {
                 console.log('Service Worker registered successfully.', reg.scope);
-                reg.update();
 
-                if (reg.waiting) {
-                    reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+                if (reg.waiting && navigator.serviceWorker.controller) {
+                    showUpdateBanner(reg.waiting);
                 }
 
                 reg.addEventListener('updatefound', () => {
@@ -2306,9 +2356,16 @@ if ('serviceWorker' in navigator) {
 
                     newWorker.addEventListener('statechange', () => {
                         if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                            newWorker.postMessage({ type: 'SKIP_WAITING' });
+                            showUpdateBanner(newWorker);
                         }
                     });
+                });
+
+                reg.update().catch(err => console.warn('Service Worker update check failed:', err));
+                document.addEventListener('visibilitychange', () => {
+                    if (document.visibilityState === 'visible') {
+                        reg.update().catch(err => console.warn('Service Worker update check failed:', err));
+                    }
                 });
             })
             .catch(err => console.warn('Service Worker registration failed:', err));

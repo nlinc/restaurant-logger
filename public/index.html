@@ -7,7 +7,7 @@
     <title>Lincoln Eats — Dinner, Decided</title>
     <meta name="description" content="Get three nearby restaurant picks matched to your mood, then teach Lincoln your taste with one-tap feedback.">
     <meta name="theme-color" content="#0a0a0a">
-    <link rel="stylesheet" href="css/styles.css?v=17">
+    <link rel="stylesheet" href="css/styles.css?v=18">
     <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
     
     <!-- PWA Configurations -->
@@ -63,7 +63,10 @@
                     <button class="occasion-chip" data-occasion="treat night" aria-pressed="false">🥂 Treat</button>
                 </div>
 
-                <button id="get-recommendation-btn" class="decision-primary">Find tonight's picks</button>
+                <div class="home-primary-actions">
+                    <button id="get-recommendation-btn" class="decision-primary">Find tonight's picks</button>
+                    <button id="open-quick-log-btn" class="decision-log-primary" type="button" aria-controls="quick-log-panel">＋ Log a place</button>
+                </div>
                 <div class="decision-secondary-actions">
                     <button id="toggle-preferences-btn" class="text-action-btn" aria-expanded="false" aria-controls="preference-panel">Tune my picks</button>
                     <button id="open-concierge-btn" class="text-action-btn">Ask for something specific</button>
@@ -120,7 +123,7 @@
 
             <details class="quick-log-panel" id="quick-log-panel">
                 <summary>
-                    <span><strong>Already ate?</strong> Log it in a few taps.</span>
+                    <span><strong>Log a place</strong> Past visit, photo, or PDF receipt.</span>
                     <span class="quick-log-plus" aria-hidden="true">＋</span>
                 </summary>
                 <div class="quick-log-content">
@@ -128,7 +131,7 @@
                         <p class="section-title">Quick log</p>
                         <button id="scan-receipt-btn" class="scan-receipt-btn" type="button">Scan or upload receipt</button>
                     </div>
-                    <input type="file" id="receipt-file-input" accept="image/*" class="visually-hidden" aria-label="Choose a receipt photo">
+                    <input type="file" id="receipt-file-input" accept="image/*,application/pdf,.pdf" class="visually-hidden" aria-label="Choose a receipt photo or PDF">
                     <div class="log-card">
                         <div class="form-group">
                             <label for="restaurant-search">Restaurant</label>
@@ -178,7 +181,7 @@
             <section class="history-section" id="history-section">
                 <div class="empty-state" id="empty-state">
                     <span class="icon">📍</span>
-                    <p>No visits logged yet.<br>Use “Already ate?” above whenever you want to remember one.</p>
+                    <p>No visits logged yet.<br>Use “Log a place” above whenever you want to remember one.</p>
                 </div>
             </section>
         </main>
@@ -295,6 +298,14 @@
     <!-- Toast -->
     <div id="toast" class="toast"></div>
 
+    <aside id="app-update-banner" class="app-update-banner" role="status" aria-live="polite" hidden>
+        <div>
+            <strong>A fresh version is ready</strong>
+            <span>Refresh to get the latest improvements.</span>
+        </div>
+        <button id="refresh-app-btn" type="button">Refresh</button>
+    </aside>
+
     <!-- Scripts -->
     <script>
         // Bridge: module scripts are deferred, so we queue the callback
@@ -304,7 +315,7 @@
         });
     </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script type="module" src="js/app.js?v=17"></script>
+    <script type="module" src="js/app.js?v=18"></script>
 </body>
 
 </html>

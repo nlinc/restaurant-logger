@@ -1,31 +1,33 @@
 # AGENTS.md — Lincoln Eats (restaurant-logger)
 
-> ⚙️ **Self-maintenance rule — do this automatically, every time.** If a change you make alters this repo's **shape** (files, entry points, structure), its **stack/dependencies**, the **build/test loop**, or a **guardrail**, you MUST update the matching section of THIS file in the *same commit* — before the task counts as done. This is not optional cleanup or a follow-up task.
+> **Self-maintenance rule.** If a change alters this repo's shape, stack, verification loop, or guardrails, update this file as part of the same change. This rule does not authorize creating a commit.
 
 A decision-first AI dining concierge with a lightweight restaurant memory. The
-primary experience helps someone choose where to eat now; logging, receipt scan,
-maps, taste history, and Dining Circles support that decision loop. Keep changes
-conservative and preserve the existing structure.
+home experience gives equal prominence to choosing where to eat now and logging
+a place afterward; maps, taste history, and Dining Circles support those loops.
+Keep changes conservative and preserve the existing structure.
 
 ## Product direction (authoritative)
 
-- **Primary moment:** before the user chooses a restaurant, especially when they
-  are indecisive and want a nearby answer quickly.
+- **Primary moments:** before the user chooses a restaurant, especially when they
+  want a nearby answer quickly, and after a meal when they return to remember a
+  place. Both entry points must be immediately visible on home.
 - **Promise:** deliver useful, real, nearby choices in under 30 seconds. The home
   experience produces three intentional lanes: a reliable match, something new,
   and a smart wildcard.
-- **Core loop:** get value first → choose a place → give a one-tap check-in later.
-  Logging is secondary; never make historical data entry the admission price for
-  a first recommendation.
+- **Core loops:** choose a place → give a one-tap check-in later, or return later →
+  log the visit directly or from a receipt. Logging and recommendations are
+  equally prominent, while historical entry remains optional for recommendations.
 - **Cold start:** explicit cuisines, typical budget, distance, current mood, and
   location are enough to make starter picks. Taste preferences and the pending
   check-in are currently versioned, per-user `localStorage` data on that device;
   no Firestore profile collection exists.
-- **Beta success metric:** weekly sessions where a user taps **Let's go** on a
-  recommendation, with one-tap check-in completion as the supporting measure.
-- Map, profile charts, receipt scan, and Dining Circles remain useful supporting
-  features, but do not move them ahead of the decision flow without an explicit
-  product reason.
+- **Beta success metrics:** weekly sessions where a user taps **Let's go** on a
+  recommendation and weekly completed visit logs, with one-tap check-in completion
+  as a supporting measure.
+- Map, profile charts, and Dining Circles remain useful supporting features, but
+  do not move them ahead of the recommendation and logging flows without an
+  explicit product reason.
 
 ## Stack (authoritative)
 
@@ -91,8 +93,8 @@ actually checked.
   A push to `main` auto-triggers the production Firebase deploy, so a push (or a
   manual deploy) IS a production release. Approval of the *work* ("looks good",
   "ship it") is NOT permission to push. Push only on an explicit, literal
-  instruction ("push to main", "deploy this"). When done, commit locally, report
-  the commit SHA(s), and stop.
+  instruction ("push to main", "deploy this"). Do not create a commit unless the
+  user explicitly asks for one.
 - **Surgical changes only.** Keep edits focused on the request. No unrelated
   refactoring, reformatting, or drive-by dependency bumps.
 - **Mobile first.** This is a phone-first PWA (`manifest.json` is `standalone`,
