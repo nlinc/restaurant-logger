@@ -44,7 +44,7 @@ bundler, or framework unless explicitly asked. `chart.js` is loaded via a plain
 
 ## Project shape
 
-- App entry: `public/index.html` — 4 views swapped by `data-view` (Tonight, Map, Saved, Profile), plus the Auth screen, the AI concierge modal, and a toast. `data-view="feed"` remains the internal key for Tonight.
+- App entry: `public/index.html` — 4 views swapped by `data-view` (Home, Map, Saved, Profile), plus the Auth screen, the AI concierge modal, and a toast. `data-view="feed"` remains the internal key for Home.
 - Main client logic: `public/js/app.js` (~2,300 lines) — auth, the decision-first recommendation flow, per-user device-local taste preferences and pending check-in, Firestore CRUD for `saved_places`, Places Autocomplete, receipt scan flow, AI concierge chat, map rendering, profile dashboard/charts, Dining Circles (create/join/leave), and the `escapeHtml()` helper.
 - Firebase client config + re-exported Firestore/Auth/Functions helpers: `public/js/firebase-config.js`
 - Styles: `public/css/styles.css` (plain CSS, no preprocessor)

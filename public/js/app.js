@@ -5,7 +5,7 @@ import {
     query, where, orderBy, limit, onSnapshot, getDocs,
     signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged,
     httpsCallable, mapsApiKey
-} from './firebase-config.js?v=23';
+} from './firebase-config.js?v=24';
 
 // Dynamically load Google Maps script with obfuscated API key
 const mapsScript = document.createElement('script');
@@ -37,12 +37,14 @@ const wishlistSection = document.getElementById('wishlist-section');
 const profileDashboard = document.getElementById('profile-dashboard');
 const wishlistBtn = document.getElementById('wishlist-btn');
 const emptyState = document.getElementById('empty-state');
+const decisionEyebrow = document.getElementById('decision-eyebrow');
 const nextPickCopy = document.getElementById('next-pick-copy');
 const getRecommendationBtn = document.getElementById('get-recommendation-btn');
 const openQuickLogBtn = document.getElementById('open-quick-log-btn');
 const openConciergeBtn = document.getElementById('open-concierge-btn');
 const homeRecommendations = document.getElementById('home-recommendations');
 const recommendationHistory = document.getElementById('recommendation-history');
+const mealOptions = document.getElementById('meal-options');
 const occasionOptions = document.getElementById('occasion-options');
 const togglePreferencesBtn = document.getElementById('toggle-preferences-btn');
 const preferencePanel = document.getElementById('preference-panel');
@@ -89,7 +91,8 @@ let circlePlaces = [];
 let circlePlacesUnsubscribe = null;
 let showCircleMap = false;
 let scannedReceiptData = null;
-let selectedOccasion = 'anything';
+let selectedMealPeriod = getDefaultMealPeriod();
+let selectedVibe = 'anything';
 let tastePreferences = getDefaultTastePreferences();
 let pendingChoiceSavePromise = null;
 const recommendationCache = new Map();
@@ -268,8 +271,41 @@ function setupHorizontalScrollAffordance(container) {
     requestAnimationFrame(update);
 }
 
+function getDefaultMealPeriod(date = new Date()) {
+    const hour = date.getHours();
+    if (hour >= 5 && hour < 11) return 'breakfast';
+    if (hour >= 11 && hour < 16) return 'lunch';
+    return 'dinner';
+}
+
+function getMealLabel(meal = selectedMealPeriod) {
+    return meal.charAt(0).toUpperCase() + meal.slice(1);
+}
+
+function renderDecisionControls() {
+    mealOptions.querySelectorAll('[data-meal]').forEach(option => {
+        const isSelected = option.dataset.meal === selectedMealPeriod;
+        option.classList.toggle('active', isSelected);
+        option.setAttribute('aria-pressed', String(isSelected));
+    });
+    occasionOptions.querySelectorAll('[data-vibe]').forEach(option => {
+        const isSelected = option.dataset.vibe === selectedVibe;
+        option.classList.toggle('active', isSelected);
+        option.setAttribute('aria-pressed', String(isSelected));
+    });
+
+    const mealLabel = getMealLabel();
+    decisionEyebrow.textContent = `${mealLabel}, decided`;
+    getRecommendationBtn.textContent = `Find ${selectedMealPeriod} picks`;
+    renderRecommendationPrompt(
+        allPlaces.filter(place => !place.status || place.status === 'visited'),
+        allPlaces.filter(place => place.status === 'wishlist')
+    );
+}
+
 setupHorizontalScrollAffordance(occasionOptions);
 setupHorizontalScrollAffordance(aiMoodChips);
+renderDecisionControls();
 
 // ===== Navigation =====
 navItems.forEach(item => {
@@ -418,16 +454,20 @@ openQuickLogBtn.addEventListener('click', () => {
 });
 openConciergeBtn.addEventListener('click', openAiModal);
 
-occasionOptions.addEventListener('click', (e) => {
-    const chip = e.target.closest('[data-occasion]');
+mealOptions.addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-meal]');
     if (!chip) return;
 
-    selectedOccasion = chip.dataset.occasion;
-    occasionOptions.querySelectorAll('[data-occasion]').forEach(option => {
-        const isSelected = option === chip;
-        option.classList.toggle('active', isSelected);
-        option.setAttribute('aria-pressed', String(isSelected));
-    });
+    selectedMealPeriod = chip.dataset.meal;
+    renderDecisionControls();
+});
+
+occasionOptions.addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-vibe]');
+    if (!chip) return;
+
+    selectedVibe = chip.dataset.vibe;
+    renderDecisionControls();
 });
 
 togglePreferencesBtn.addEventListener('click', () => {
@@ -451,8 +491,8 @@ preferencePanel.addEventListener('click', (e) => {
         tastePreferences.cuisines = [...next];
     } else if (group === 'priceLevel') {
         tastePreferences.priceLevel = Number(value);
-    } else if (group === 'maxDistanceKm') {
-        tastePreferences.maxDistanceKm = Number(value);
+    } else if (group === 'maxDistanceMiles') {
+        tastePreferences.maxDistanceMiles = Number(value);
     }
     renderPreferenceControls();
 });
@@ -466,8 +506,8 @@ savePreferencesBtn.addEventListener('click', () => {
     showToast('Taste settings saved on this device.', 'success');
 });
 
-function getPreferenceStorageKey() {
-    return currentUser ? `lincolnEats:taste:v1:${currentUser.uid}` : null;
+function getPreferenceStorageKey(version = 2) {
+    return currentUser ? `lincolnEats:taste:v${version}:${currentUser.uid}` : null;
 }
 
 function loadTastePreferences() {
@@ -475,13 +515,22 @@ function loadTastePreferences() {
     const key = getPreferenceStorageKey();
     if (!key) return;
     try {
-        const stored = JSON.parse(localStorage.getItem(key) || 'null');
-        if (!stored || stored.version !== 1) return;
+        const current = JSON.parse(localStorage.getItem(key) || 'null');
+        const legacy = JSON.parse(localStorage.getItem(getPreferenceStorageKey(1)) || 'null');
+        const stored = current?.version === 2 ? current : legacy?.version === 1 ? legacy : null;
+        if (!stored) return;
+        const legacyDistanceKm = Number(stored.maxDistanceKm);
+        const migratedDistanceMiles = Number.isFinite(legacyDistanceKm)
+            ? legacyDistanceKm <= 3 ? 2 : legacyDistanceKm <= 8 ? 5 : 10
+            : 5;
         tastePreferences = {
             cuisines: Array.isArray(stored.cuisines) ? stored.cuisines.slice(0, 5) : [],
             priceLevel: [1, 2, 3].includes(Number(stored.priceLevel)) ? Number(stored.priceLevel) : 2,
-            maxDistanceKm: [3, 8, 16].includes(Number(stored.maxDistanceKm)) ? Number(stored.maxDistanceKm) : 8
+            maxDistanceMiles: [2, 5, 10].includes(Number(stored.maxDistanceMiles))
+                ? Number(stored.maxDistanceMiles)
+                : migratedDistanceMiles
         };
+        if (!current) saveTastePreferences();
     } catch (e) {
         console.warn('Could not load taste settings:', e);
     }
@@ -491,7 +540,7 @@ function getDefaultTastePreferences() {
     return {
         cuisines: [],
         priceLevel: 2,
-        maxDistanceKm: 8
+        maxDistanceMiles: 5
     };
 }
 
@@ -503,6 +552,8 @@ function resetUserScopedClientState() {
     circlePlaces = [];
     aiChatHistoryData = [];
     pendingChoiceSavePromise = null;
+    selectedMealPeriod = getDefaultMealPeriod();
+    selectedVibe = 'anything';
     tastePreferences = getDefaultTastePreferences();
     recommendationCache.clear();
     homeRecommendations.innerHTML = '';
@@ -513,6 +564,7 @@ function resetUserScopedClientState() {
     notesInput.value = '';
     document.querySelectorAll('.category-rating input').forEach(input => { input.checked = false; });
     renderTags();
+    renderDecisionControls();
     updateSaveBtn();
 }
 
@@ -520,7 +572,7 @@ function saveTastePreferences() {
     const key = getPreferenceStorageKey();
     if (!key) return;
     try {
-        localStorage.setItem(key, JSON.stringify({ version: 1, ...tastePreferences }));
+        localStorage.setItem(key, JSON.stringify({ version: 2, ...tastePreferences }));
     } catch (e) {
         console.warn('Could not save taste settings:', e);
     }
@@ -1125,7 +1177,7 @@ function renderWishlist(places, filter = 'all') {
             filtered = places.filter(p => {
                 if (!p.lat || !p.lng) return false;
                 const dist = calculateDistance(userLat, userLng, p.lat, p.lng);
-                return dist < 10; // Within 10km
+                return dist < milesToKm(10);
             });
 
             renderWishlistCards(filtered);
@@ -1144,11 +1196,11 @@ function renderRecommendationPrompt(visited, wishlist) {
 
     const signalCount = visited.length + wishlist.length;
     if (signalCount === 0) {
-        nextPickCopy.textContent = 'Start with up to three verified places nearby. Tune a few preferences if you want a sharper first pick.';
+        nextPickCopy.textContent = `Choose the vibe. Lincoln will find up to three verified nearby ${selectedMealPeriod} options in under 30 seconds.`;
     } else if (visited.length < 3) {
-        nextPickCopy.textContent = 'Three nearby options, using your early taste signals and tonight\'s mood.';
+        nextPickCopy.textContent = `Three nearby ${selectedMealPeriod} options, using your early taste signals and the vibe you chose.`;
     } else {
-        nextPickCopy.textContent = 'A reliable match, something new, and one smart wildcard—personalized to you.';
+        nextPickCopy.textContent = `A reliable ${selectedMealPeriod} match, something new, and one smart wildcard—personalized to you.`;
     }
 }
 
@@ -1255,7 +1307,7 @@ async function handleHomeRecommendations() {
     if (isLocalUiPreview) {
         const previewRecommendations = [
             { lane: 'reliable', name: 'Neighborhood Favorite', cuisine: 'Italian', price_range: '$$', reasoning: 'A dependable nearby match for your usual comfort-food mood.', google_rating: 4.7, is_open_now: true, verified: true, address: '12 Market Street' },
-            { lane: 'new', name: 'Fresh Find Kitchen', cuisine: 'Thai', price_range: '$$', reasoning: 'Close to what you enjoy, with enough novelty to make tonight interesting.', google_rating: 4.6, is_open_now: true, verified: true, address: '48 Pine Avenue' },
+            { lane: 'new', name: 'Fresh Find Kitchen', cuisine: 'Thai', price_range: '$$', reasoning: 'Close to what you enjoy, with enough novelty to make this meal interesting.', google_rating: 4.6, is_open_now: true, verified: true, address: '48 Pine Avenue' },
             { lane: 'wildcard', name: 'The Clever Detour', cuisine: 'Mediterranean', price_range: '$$', reasoning: 'A smart change of pace that still fits your budget and distance.', google_rating: 4.5, is_open_now: null, verified: true, address: '7 River Road' }
         ];
         homeRecommendations.innerHTML = renderRecommendationCardsHtml(previewRecommendations, 'home');
@@ -1272,9 +1324,11 @@ async function handleHomeRecommendations() {
         }
         const result = await requestRecommendations({
             mode: 'three_lanes',
-            message: `Help me choose where to eat now. The occasion is: ${selectedOccasion}.`,
+            message: `Help me choose where to eat now. I want ${selectedMealPeriod} with a ${selectedVibe} vibe.`,
             lat: pos?.coords?.latitude || null,
             lng: pos?.coords?.longitude || null,
+            mealPeriod: selectedMealPeriod,
+            vibe: selectedVibe,
             preferences: tastePreferences
         });
 
@@ -1294,7 +1348,7 @@ async function handleHomeRecommendations() {
     }
 }
 
-async function requestRecommendations({ message, lat = null, lng = null, mode = 'chat', preferences = null }) {
+async function requestRecommendations({ message, lat = null, lng = null, mode = 'chat', mealPeriod = null, vibe = null, preferences = null }) {
     const recommend = httpsCallable(functions, 'recommend');
     const result = await recommend({
         lat,
@@ -1302,6 +1356,8 @@ async function requestRecommendations({ message, lat = null, lng = null, mode = 
         message,
         history: aiChatHistoryData,
         mode,
+        mealPeriod,
+        vibe,
         preferences
     });
     return result.data || {};
@@ -1343,7 +1399,7 @@ function renderRecommendationCardsHtml(recommendations, surface) {
                     ${surface === 'home'
                         ? `<button class="rec-feedback-btn primary" data-rec-action="go" data-rec-key="${encodedKey}">Let's go</button>
                            <button class="rec-feedback-btn" data-rec-action="wishlist" data-rec-key="${encodedKey}">Save</button>
-                           <button class="rec-feedback-btn quiet" data-rec-action="dismissed" data-rec-key="${encodedKey}">Not tonight</button>`
+                           <button class="rec-feedback-btn quiet" data-rec-action="dismissed" data-rec-key="${encodedKey}">Not now</button>`
                         : `<button class="rec-feedback-btn primary" data-rec-action="wishlist" data-rec-key="${encodedKey}">Want to go</button>
                            <button class="rec-feedback-btn" data-rec-action="visited" data-rec-key="${encodedKey}">Tried it</button>
                            <button class="rec-feedback-btn quiet" data-rec-action="dismissed" data-rec-key="${encodedKey}">Not for me</button>`}
@@ -1445,7 +1501,7 @@ async function handleRecommendationAction(rec, action, btn) {
         const feedbackMessage = saveResult === 'already_visited'
             ? 'Already in your visit history.'
             : saveResult === 'kept_visit'
-                ? 'Noted for tonight. Your visit history is unchanged.'
+                ? 'Noted. Your visit history is unchanged.'
                 : action === 'wishlist' ? 'Added to Saved.' : 'Noted for future picks.';
         showToast(feedbackMessage, 'success');
     } catch (e) {
@@ -1676,6 +1732,10 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
             Math.sin(dLon / 2) * Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
+}
+
+function milesToKm(miles) {
+    return miles * 1.609344;
 }
 
 function renderCategoryBadge(rating) {
@@ -2495,7 +2555,7 @@ if ('serviceWorker' in navigator) {
             window.location.reload();
         });
 
-        navigator.serviceWorker.register('/sw.js?v=23')
+        navigator.serviceWorker.register('/sw.js?v=24')
             .then(reg => {
                 console.log('Service Worker registered successfully.', reg.scope);
 

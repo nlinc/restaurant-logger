@@ -1411,6 +1411,22 @@ body {
   max-width: 38ch;
 }
 
+.decision-step-label {
+  color: var(--text-muted);
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.45rem;
+}
+
+.meal-options {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 1rem;
+}
+
 .occasion-options {
   display: flex;
   gap: 0.5rem;
@@ -1441,6 +1457,7 @@ body {
   mask-image: linear-gradient(to right, transparent, #000 30px);
 }
 
+.meal-chip,
 .occasion-chip,
 .preference-options button {
   background: var(--bg-glass);
@@ -1457,12 +1474,20 @@ body {
   transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.2s;
 }
 
+.meal-chip {
+  min-width: 0;
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
+}
+
+.meal-chip:hover,
 .occasion-chip:hover,
 .preference-options button:hover {
   border-color: var(--border-focus);
   transform: translateY(-1px);
 }
 
+.meal-chip.active,
 .occasion-chip.active,
 .preference-options button.active {
   background: var(--accent-soft);
@@ -1701,6 +1726,7 @@ body {
   .checkin-actions { grid-template-columns: 1fr; }
 }
 
+.meal-chip:focus-visible,
 .occasion-chip:focus-visible,
 .preference-options button:focus-visible,
 .decision-primary:focus-visible,

@@ -4,10 +4,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Lincoln Eats — Dinner, Decided</title>
+    <title>Lincoln Eats — Food, Decided</title>
     <meta name="description" content="Get three nearby restaurant picks matched to your mood, then teach Lincoln your taste with one-tap feedback.">
     <meta name="theme-color" content="#0a0a0a">
-    <link rel="stylesheet" href="css/styles.css?v=23">
+    <link rel="stylesheet" href="css/styles.css?v=24">
     <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
     
     <!-- PWA Configurations -->
@@ -24,7 +24,7 @@
     <div id="auth-screen" class="auth-screen">
         <div class="logo">🍽️</div>
         <h1>Lincoln Eats</h1>
-        <p>Three nearby picks for tonight, personalized to your taste.</p>
+        <p>Three nearby picks for right now, personalized to your taste.</p>
         <button id="google-sign-in" class="google-sign-in-btn">
             <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google">
             Sign in with Google
@@ -51,23 +51,31 @@
             </div>
         </header>
 
-        <!-- View: Tonight (Decision + Quick Log + History) -->
+        <!-- View: Home (Decision + Quick Log + History) -->
         <main id="view-feed" class="app-view active">
             <section class="decision-hero" aria-labelledby="decision-title">
-                <p class="decision-eyebrow">Dinner, decided</p>
+                <p class="decision-eyebrow" id="decision-eyebrow">Dinner, decided</p>
                 <h2 id="decision-title">Where should we eat?</h2>
-                <p class="decision-copy" id="next-pick-copy">Choose the mood. Lincoln will find up to three verified nearby options in under 30 seconds.</p>
+                <p class="decision-copy" id="next-pick-copy">Choose the vibe. Lincoln will find up to three verified nearby dinner options in under 30 seconds.</p>
 
-                <div class="occasion-options" id="occasion-options" aria-label="Tonight's mood" role="group">
-                    <button class="occasion-chip active" data-occasion="anything" aria-pressed="true">✨ Anything</button>
-                    <button class="occasion-chip" data-occasion="casual" aria-pressed="false">👟 Casual</button>
-                    <button class="occasion-chip" data-occasion="date night" aria-pressed="false">🕯️ Date night</button>
-                    <button class="occasion-chip" data-occasion="quick bite" aria-pressed="false">⚡ Quick</button>
-                    <button class="occasion-chip" data-occasion="treat night" aria-pressed="false">🥂 Treat</button>
+                <span class="decision-step-label">1 · What are you looking for?</span>
+                <div class="meal-options" id="meal-options" aria-label="Meal" role="group">
+                    <button class="meal-chip" data-meal="breakfast" aria-pressed="false">🍳 Breakfast</button>
+                    <button class="meal-chip" data-meal="lunch" aria-pressed="false">🥪 Lunch</button>
+                    <button class="meal-chip active" data-meal="dinner" aria-pressed="true">🍽️ Dinner</button>
+                </div>
+
+                <span class="decision-step-label">2 · What’s the vibe?</span>
+                <div class="occasion-options" id="occasion-options" aria-label="Dining vibe" role="group">
+                    <button class="occasion-chip active" data-vibe="anything" aria-pressed="true">✨ Anything</button>
+                    <button class="occasion-chip" data-vibe="casual" aria-pressed="false">👟 Casual</button>
+                    <button class="occasion-chip" data-vibe="cozy" aria-pressed="false">🕯️ Cozy</button>
+                    <button class="occasion-chip" data-vibe="quick" aria-pressed="false">⚡ Quick</button>
+                    <button class="occasion-chip" data-vibe="treat" aria-pressed="false">🥂 Treat</button>
                 </div>
 
                 <div class="home-primary-actions">
-                    <button id="get-recommendation-btn" class="decision-primary">Find tonight's picks</button>
+                    <button id="get-recommendation-btn" class="decision-primary">Find dinner picks</button>
                     <button id="open-quick-log-btn" class="decision-log-primary" type="button" aria-controls="quick-log-panel">＋ Log a place</button>
                 </div>
                 <div class="decision-secondary-actions">
@@ -108,10 +116,10 @@
 
                     <fieldset class="preference-group">
                         <legend>How far?</legend>
-                        <div class="preference-options segmented" data-preference-group="maxDistanceKm">
-                            <button data-preference-value="3">3 km</button>
-                            <button data-preference-value="8">8 km</button>
-                            <button data-preference-value="16">16 km</button>
+                        <div class="preference-options segmented" data-preference-group="maxDistanceMiles">
+                            <button data-preference-value="2">2 mi</button>
+                            <button data-preference-value="5">5 mi</button>
+                            <button data-preference-value="10">10 mi</button>
                         </div>
                     </fieldset>
 
@@ -217,7 +225,7 @@
             <section class="wishlist-section" id="wishlist-section">
                 <div class="empty-state">
                     <span class="icon">🔖</span>
-                    <p>Nothing saved yet.<br>Save one of tonight’s picks to keep it handy.</p>
+                    <p>Nothing saved yet.<br>Save one of your picks to keep it handy.</p>
                 </div>
             </section>
         </main>
@@ -237,7 +245,7 @@
         <nav class="bottom-nav">
             <button class="nav-item active" data-view="feed">
                 <span class="icon">🏠</span>
-                <span class="label">Tonight</span>
+                <span class="label">Home</span>
             </button>
             <button class="nav-item" data-view="map">
                 <span class="icon">📍</span>
@@ -318,7 +326,7 @@
         });
     </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script type="module" src="js/app.js?v=23"></script>
+    <script type="module" src="js/app.js?v=24"></script>
 </body>
 
 </html>
