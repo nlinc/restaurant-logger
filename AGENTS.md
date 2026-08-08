@@ -37,7 +37,7 @@ bundler, or framework unless explicitly asked. `chart.js` is loaded via a plain
 `<script>` CDN tag in `index.html`, not an npm dependency.
 
 - Firebase project: `lincoln-eats-77229` (see `.firebaserc`)
-- Firebase services in use: Hosting, Firestore, Cloud Functions (2nd gen, `nodejs20`), Auth (Google sign-in)
+- Firebase services in use: Hosting, Firestore, Cloud Functions (2nd gen, `nodejs22`), Auth (Google sign-in)
 - Firebase Storage is NOT configured — there is no `storage.rules` and no Storage bucket usage in the app. Don't assume Storage exists.
 - Cloud Functions: `functions/index.js` — two `onCall` v2 functions, `recommend` and `scanReceipt`, both call Gemini (`@google/genai`, model `gemini-2.5-flash`) via secrets (`GEMINI_API_KEY`, `MAPS_API_KEY` defined with `defineSecret`). `recommend` supports `chat` and `three_lanes` modes, accepts bounded device-local taste preferences, and validates immediate-decision suggestions against the Google Places API (Find Place + Place Details), distance, price, business status, and duplicate place IDs.
 - Browser Google Maps/Places: loaded dynamically in `public/js/app.js` via a `<script>` tag pointed at `maps.googleapis.com/maps/api/js`, using the same key exported as `mapsApiKey` from `firebase-config.js` (that key doubles as the Firebase Web API key — it's a public, referrer-restricted browser key, not a secret). Used for the Feed's address Autocomplete and the Map view's markers.
