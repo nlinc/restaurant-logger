@@ -5,7 +5,7 @@ import {
     query, where, orderBy, limit, onSnapshot, getDocs,
     signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged,
     httpsCallable, mapsApiKey
-} from './firebase-config.js?v=25';
+} from './firebase-config.js?v=26';
 
 // Dynamically load Google Maps script with obfuscated API key
 const mapsScript = document.createElement('script');
@@ -1712,16 +1712,16 @@ async function handleRecommendationAction(rec, action, btn) {
     }
 
     if (action === 'go') {
-        window.open(getDirectionsUrl(rec), '_blank', 'noopener');
+        window.open(getGooglePlaceUrl(rec), '_blank', 'noopener');
         storePendingCheckin(rec);
         renderPendingCheckin();
-        btn.textContent = 'On our way';
+        btn.textContent = 'Place opened';
         btn.disabled = true;
         pendingChoiceSavePromise = saveRecommendation(rec, 'wishlist').catch(e => {
             console.error('Could not save chosen recommendation:', e);
             return 'error';
         });
-        showToast('Saved. I’ll ask how it was next time.', 'success');
+        showToast('Opened restaurant details. I’ll ask how it was next time.', 'success');
         return;
     }
 
@@ -1762,16 +1762,14 @@ async function handleRecommendationAction(rec, action, btn) {
     }
 }
 
-function getDirectionsUrl(place) {
-    const destination = place.lat && place.lng
-        ? `${place.lat},${place.lng}`
-        : [place.name, place.address].filter(Boolean).join(' ');
+function getGooglePlaceUrl(place) {
+    const query = [place.name, place.address].filter(Boolean).join(' ');
     const params = new URLSearchParams({
         api: '1',
-        destination
+        query: query || place.name || 'restaurant'
     });
-    if (place.place_id) params.set('destination_place_id', place.place_id);
-    return `https://www.google.com/maps/dir/?${params}`;
+    if (place.place_id) params.set('query_place_id', place.place_id);
+    return `https://www.google.com/maps/search/?${params}`;
 }
 
 function getPendingCheckinStorageKey() {
@@ -2806,7 +2804,7 @@ if ('serviceWorker' in navigator) {
             window.location.reload();
         });
 
-        navigator.serviceWorker.register('/sw.js?v=25')
+        navigator.serviceWorker.register('/sw.js?v=26')
             .then(reg => {
                 console.log('Service Worker registered successfully.', reg.scope);
 

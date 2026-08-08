@@ -218,7 +218,7 @@ ${wishlistSummary.join("; ") || "None yet"}
 
 EXPLICIT DEVICE PREFERENCES:
 - Preferred cuisines: ${preferences.cuisines.join(", ") || "No explicit cuisine preference"}
-- Typical price level: ${preferences.priceLevel || "No explicit price preference"}
+- Maximum price level: ${preferences.priceLevel || "No explicit price preference"}
 - Maximum distance: ${preferences.maxDistanceMiles.toFixed(1)} miles
 
 ${locationContext}
@@ -231,7 +231,7 @@ KNOWN PLACES:
 
 RULES:
 1. Recommend only real, existing restaurants matching the user's location when coordinates are present.
-2. Treat explicit price and distance preferences as hard constraints. The wildcard may stretch cuisine, never budget or distance.
+2. Treat explicit price as a maximum and distance as a hard constraint. The wildcard may stretch cuisine, never budget or distance.
 3. Keep reasoning specific and brief. Do not claim facts you do not know.
 4. Do not repeat the same restaurant in multiple lanes.
 5. If location is missing, do not invent the user's city.
@@ -345,7 +345,7 @@ Return ONLY valid JSON without Markdown formatting brackets.`;
         };
 
         // Validate recommendations against Google Places API
-        if (jsonResponse.recommendations && jsonResponse.recommendations.length > 0) {
+        if (jsonResponse.recommendations.length > 0 || (mode === "three_lanes" && hasLocation)) {
             const apiKey = mapsApiKey.value();
             const validated = [];
             const seenPlaceIds = new Set();
@@ -416,8 +416,9 @@ Return ONLY valid JSON without Markdown formatting brackets.`;
                             }
                         }
                         if (mode === "three_lanes" && preferences.priceLevel
-                            && place.price_level !== preferences.priceLevel) {
-                            console.log(`Filtered out ${rec.name}: price level mismatch`);
+                            && Number.isFinite(place.price_level)
+                            && place.price_level > preferences.priceLevel) {
+                            console.log(`Filtered out ${rec.name}: above price preference`);
                             continue;
                         }
 
@@ -446,6 +447,86 @@ Return ONLY valid JSON without Markdown formatting brackets.`;
             }
 
             const laneOrder = { reliable: 0, new: 1, wildcard: 2 };
+
+            // Gemini can name the wrong branch of a chain even with location bias. Fill any
+            // missing lanes from a radius-restricted Places search so a dense neighborhood
+            // does not collapse to an empty result after validation.
+            if (mode === "three_lanes" && hasLocation && validated.length < 3) {
+                try {
+                    const nearbyParams = new URLSearchParams({
+                        location: `${lat},${lng}`,
+                        radius: String(Math.round(preferences.maxDistanceKm * 1000)),
+                        type: "restaurant",
+                        opennow: "true",
+                        key: apiKey
+                    });
+                    if (preferences.priceLevel) {
+                        nearbyParams.set("maxprice", String(preferences.priceLevel));
+                    }
+
+                    const nearbyUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${nearbyParams}`;
+                    const nearbyRes = await fetch(nearbyUrl);
+                    const nearbyData = await nearbyRes.json();
+                    if (!["OK", "ZERO_RESULTS"].includes(nearbyData.status)) {
+                        console.warn(`Nearby Places fallback failed: ${nearbyData.status || "unknown status"}`);
+                    }
+
+                    const missingLanes = ["reliable", "new", "wildcard"]
+                        .filter(lane => !validated.some(place => place.lane === lane));
+                    const nearbyPlaces = Array.isArray(nearbyData.results) ? nearbyData.results : [];
+
+                    for (const place of nearbyPlaces) {
+                        if (!missingLanes.length) break;
+                        const placeLat = place.geometry?.location?.lat;
+                        const placeLng = place.geometry?.location?.lng;
+                        const candidateName = normalizePlaceName(place.name);
+                        const isVisited = visitedIds.has(place.place_id) || visitedNames.has(candidateName);
+                        const isDismissed = dismissedIds.has(place.place_id) || dismissedNames.has(candidateName);
+                        const isRecent = recentIds.has(place.place_id) || recentNames.has(candidateName);
+                        const laneIndex = missingLanes.findIndex(lane => lane === "reliable" || !isVisited);
+
+                        if (!place.place_id || !candidateName || seenPlaceIds.has(place.place_id)) continue;
+                        if (isDismissed || isRecent || laneIndex === -1) continue;
+                        if (place.business_status === "CLOSED_PERMANENTLY" || place.opening_hours?.open_now === false) continue;
+                        if (!Number.isFinite(placeLat) || !Number.isFinite(placeLng)) continue;
+                        if (distanceKm(lat, lng, placeLat, placeLng) > preferences.maxDistanceKm) continue;
+                        if (preferences.priceLevel && Number.isFinite(place.price_level)
+                            && place.price_level > preferences.priceLevel) continue;
+
+                        const lane = missingLanes.splice(laneIndex, 1)[0];
+                        const reasoning = lane === "reliable"
+                            ? "A well-rated nearby option that fits your distance and budget."
+                            : lane === "new"
+                                ? "A verified nearby place you haven't logged yet."
+                                : "A smart nearby change of pace that still fits your settings.";
+                        const cuisineType = (place.types || []).find(type =>
+                            type.endsWith("_restaurant") && type !== "restaurant");
+
+                        seenPlaceIds.add(place.place_id);
+                        validated.push({
+                            lane,
+                            name: place.name,
+                            cuisine: cuisineType
+                                ? cuisineType.replace(/_restaurant$/, "").replace(/_/g, " ")
+                                : "",
+                            price_range: Number.isFinite(place.price_level) ? "$".repeat(place.price_level) : "",
+                            reasoning,
+                            verified: true,
+                            google_rating: place.rating || null,
+                            address: place.vicinity || null,
+                            is_open_now: place.opening_hours?.open_now ?? null,
+                            types: place.types || [],
+                            price_level: place.price_level ?? null,
+                            lat: placeLat,
+                            lng: placeLng,
+                            place_id: place.place_id
+                        });
+                    }
+                } catch (err) {
+                    console.warn("Nearby Places fallback failed:", err.message);
+                }
+            }
+
             jsonResponse.recommendations = validated.sort((a, b) =>
                 (laneOrder[a.lane] ?? 9) - (laneOrder[b.lane] ?? 9));
             if (mode === "three_lanes" && validated.length < 3) {
