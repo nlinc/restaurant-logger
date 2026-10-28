@@ -1,0 +1,63 @@
+{
+  "schema": 1,
+  "app": "lincoln-eats",
+  "assets": [
+    {
+      "source": "public/css/styles.css",
+      "path": "css/styles.css"
+    },
+    {
+      "source": "public/icons/icon-180.png",
+      "path": "icons/icon-180.png"
+    },
+    {
+      "source": "public/icons/icon-192.png",
+      "path": "icons/icon-192.png"
+    },
+    {
+      "source": "public/icons/icon-512.png",
+      "path": "icons/icon-512.png"
+    },
+    {
+      "source": "public/icons/maskable-512.png",
+      "path": "icons/maskable-512.png"
+    },
+    {
+      "source": "public/index.html",
+      "path": "index.html"
+    },
+    {
+      "source": "public/js/app.js",
+      "path": "js/app.js"
+    },
+    {
+      "source": "public/js/firebase-config.js",
+      "path": "js/firebase-config.js"
+    },
+    {
+      "source": "public/manifest.json",
+      "path": "manifest.json"
+    },
+    {
+      "source": "public/sw.js",
+      "path": "sw.js"
+    }
+  ],
+  "checks": [
+    [
+      "node",
+      "--check",
+      "public/js/app.js"
+    ],
+    [
+      "node",
+      "--check",
+      "functions/index.js"
+    ],
+    [
+      "node",
+      "--test",
+      "scripts/hosting-release.test.mjs"
+    ]
+  ]
+}

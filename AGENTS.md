@@ -7,6 +7,22 @@ home experience gives equal prominence to choosing where to eat now and logging
 a place afterward; maps, taste history, and Dining Circles support those loops.
 Keep changes conservative and preserve the existing structure.
 
+
+## Shared workspace workflow
+
+Within Nicholas's personal workspace or its linked checkouts, also read
+`/Users/nicholaslincoln/dev/dev-hq/WORKFLOW.md`. Its verification/evidence,
+release-identity, atomic task-link, handoff/triage and recovery rules apply.
+Root AGENTS.md supplies standing authority; this app's specific safety deltas,
+paused scopes and scheduled-worker restrictions remain binding. The root
+senior-dev review-branch exception does not grant commits/main/merge/deploy,
+new resources, live-data/device operations or wider scheduled-worker powers.
+Generic push prohibitions below concern production/main; explicit narrower
+local/retired/pilot restrictions retain their own scope. Existing owner authority
+continues within its bounds; do not ask for the same approval again.
+Outside this workspace, retain the repository contract and restrictions rather
+than inventing shared services. A structural check is not app-health acceptance.
+
 ## Product direction (authoritative)
 
 - **Primary moments:** before the user chooses a restaurant, especially when they
@@ -89,8 +105,7 @@ actually checked.
 
 ## Guardrails
 
-- **Human owns production releases.** Never run `git push` or `firebase deploy`
-  without an explicit instruction. There is currently no auto-deploy workflow in
+- **Human owns production releases.** Main pushes and Firebase deployments require explicit action-specific owner authority. There is currently no auto-deploy workflow in
   this repo, so pushing `main` does not update Firebase Hosting or Functions;
   production changes require a separate manual deploy. Approval of the *work*
   ("looks good", "ship it") is NOT permission to push or deploy. Do not create a
@@ -152,3 +167,12 @@ Update this AGENTS.md in the SAME commit whenever you change the project's shape
 stack, the loop, or a guardrail — e.g. adding a build step, adding Storage usage,
 adding a delete feature, or changing the rating scale. A stale AGENTS.md is worse
 than none — it makes the agents confidently wrong.
+
+## Portable process gate and release identity
+
+Read [the project engineering process](docs/workspace-process.md).
+`node scripts/hosting-release.mjs gate` runs this app’s declared checks plus
+source/artifact regression controls. `candidate` stages only committed reviewed
+assets after that gate; `check` and `verify-url` prove intended artifact/served
+bytes. Existing app/manual/emulator/device and private-data guards above remain
+binding. Release preparation is tooling, not a frontend framework or new backend.
