@@ -48,6 +48,7 @@ test('symlinks, missing/changed source-bound bytes and forged inventories are re
  let m=JSON.parse(await readFile(resolve(f.output,'public/release.json')));m.assets['app.js']='0'.repeat(64);await writeFile(resolve(f.output,'public/release.json'),JSON.stringify(m));
  await assert.rejects(check(f.source,f.output,f.sha),/Source\/asset mismatch/);
  await rm(file);await symlink(resolve(f.source,'public/app.js'),file);await assert.rejects(check(f.source,f.output,f.sha),/symlink/);
+ const alias=resolve(f.root,'artifact-alias');await symlink(f.output,alias);await assert.rejects(check(f.source,alias,f.sha),/real directory/);
 });
 test('served proof handles canonical root, exact intent, stale/corrupt/oversized/redirected assets and visibility deadline',async t=>{
  const f=await fixture(t);await prepare(f.source,f.output,f.sha);let fault='',stale=0;const seen=[];

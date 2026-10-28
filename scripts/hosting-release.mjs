@@ -86,6 +86,8 @@ export async function prepare(root, output, sha) {
 }
 export async function check(root, output, sha) {
     const snapshot = sourceSnapshot(root, sha); const expected = identityFor(snapshot);
+    const rootStat = await lstat(output);
+    assert.ok(rootStat.isDirectory() && !rootStat.isSymbolicLink(), 'Artifact root must be a real directory');
     assert.deepEqual((await readdir(output)).sort(), ['firebase.json','public'], 'Artifact must contain only Hosting config and public assets');
     const inventory = ['firebase.json', `public/${marker}`, ...Object.keys(snapshot.assets).map(name => 'public/' + name)].sort();
     assert.deepEqual(await files(resolve(output)), inventory, 'Unexpected or missing artifact entry');
