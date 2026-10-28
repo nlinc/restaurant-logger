@@ -42,6 +42,8 @@ export function sourceSnapshot(root, sha) {
     const config = JSON.parse(git(root, 'show', `${sha}:firebase.json`).toString());
     assert.ok(config.hosting && !Array.isArray(config.hosting) && typeof config.hosting.public === 'string', 'Single Hosting site required');
     const hosting = { ...config.hosting, public: 'public' };
+    // The artifact is already prepared: repository lifecycle hooks must not mutate/rebuild it.
+    delete hosting.predeploy; delete hosting.postdeploy;
     hosting.headers = [...(hosting.headers || []), { source: '/release.json', headers: [{ key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' }] }];
     const configBytes = Buffer.from(JSON.stringify({ hosting }, null, 2) + '\n');
     return { policy, assets, configBytes, sha };

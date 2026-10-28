@@ -16,7 +16,7 @@ async function fixture(t, editPolicy = x => x) {
     for (const [name, bytes] of Object.entries(assets)) await writeFile(resolve(source, 'public', name), bytes);
     const policy = editPolicy({ schema:1,app:'synthetic',assets:Object.keys(assets).map(path => ({source:'public/'+path,path})),stampFiles:['index.html'],checks:[['node','--check','public/app.js']] });
     await writeFile(resolve(source, '.release-policy.json'), JSON.stringify(policy));
-    await writeFile(resolve(source, 'firebase.json'), JSON.stringify({ hosting:{public:'public'},functions:{source:'private-functions'},firestore:{rules:'private.rules'} }));
+    await writeFile(resolve(source, 'firebase.json'), JSON.stringify({ hosting:{public:'public',predeploy:['node must-not-run.js'],postdeploy:['node must-not-run.js']},functions:{source:'private-functions'},firestore:{rules:'private.rules'} }));
     await writeFile(resolve(source, 'private.txt'), 'synthetic private exclusion');
     const env={...process.env,GIT_AUTHOR_NAME:'Synthetic fixture',GIT_AUTHOR_EMAIL:'fixture@example.invalid',GIT_COMMITTER_NAME:'Synthetic fixture',GIT_COMMITTER_EMAIL:'fixture@example.invalid'};
     const git=(...args)=>execFileSync('git',['-C',source,...args],{env,encoding:'utf8'}).trim();
@@ -31,7 +31,8 @@ test('actual CLI prepares exact committed inputs without private/backend surface
  const m=await check(f.source,f.output,f.sha);assert.equal(m.sha,f.sha);
  assert.equal((await readFile(resolve(f.output,'public/index.html'),'utf8')),`<title>${f.sha.slice(0,7)}</title>`);
  assert.equal((await readFile(resolve(f.output,'public/sw.js'),'utf8')),'const CACHE_NAME="same-manual-version";');
- assert.deepEqual(Object.keys(JSON.parse(await readFile(resolve(f.output,'firebase.json')))),['hosting']);
+ const stagedConfig=JSON.parse(await readFile(resolve(f.output,'firebase.json')));
+ assert.deepEqual(Object.keys(stagedConfig),['hosting']);assert.equal(stagedConfig.hosting.predeploy,undefined);assert.equal(stagedConfig.hosting.postdeploy,undefined);
  await assert.rejects(prepare(f.source,f.output,f.sha),/EEXIST/);
  await writeFile(resolve(f.output,'unexpected.txt'),'must not ship');await assert.rejects(check(f.source,f.output,f.sha),/only Hosting/);
 });
