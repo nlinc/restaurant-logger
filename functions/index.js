@@ -3,6 +3,7 @@ const { GoogleGenAI } = require("@google/genai");
 const { defineSecret } = require("firebase-functions/params");
 const { getFirestore } = require("firebase-admin/firestore");
 const { initializeApp } = require("firebase-admin/app");
+const { isEligibleRecommendationPlace, searchPlacesText } = require("./places-new");
 
 initializeApp();
 const db = getFirestore();
@@ -65,16 +66,6 @@ function normalizeRecommendationRequest(data = {}) {
 
 function normalizePlaceName(value) {
     return cleanText(value, 120).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-}
-
-function distanceKm(lat1, lng1, lat2, lng2) {
-    const toRadians = degrees => degrees * Math.PI / 180;
-    const earthRadiusKm = 6371;
-    const dLat = toRadians(lat2 - lat1);
-    const dLng = toRadians(lng2 - lng1);
-    const a = Math.sin(dLat / 2) ** 2
-        + Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLng / 2) ** 2;
-    return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 exports.recommend = onCall({ secrets: [geminiApiKey, mapsApiKey], cors: true, invoker: "public" }, async (request) => {
@@ -350,91 +341,46 @@ Return ONLY valid JSON without Markdown formatting brackets.`;
             const validated = [];
             const seenPlaceIds = new Set();
 
+            const isEligiblePlace = (place, lane) => isEligibleRecommendationPlace(place, {
+                lane,
+                mode,
+                lat,
+                lng,
+                maxDistanceKm: preferences.maxDistanceKm,
+                priceLevel: preferences.priceLevel,
+                visitedIds,
+                visitedNames,
+                dismissedIds,
+                dismissedNames,
+                recentIds,
+                recentNames,
+                seenPlaceIds
+            });
+
             for (const rec of jsonResponse.recommendations) {
                 try {
-                    // Step 1: Find the place using just the name (no cuisine to avoid wrong matches)
-                    const findParams = new URLSearchParams({
-                        input: `${rec.name} restaurant`,
-                        inputtype: 'textquery',
-                        fields: 'place_id',
-                        key: apiKey
+                    const candidates = await searchPlacesText({
+                        apiKey,
+                        textQuery: `${rec.name} restaurant`,
+                        lat,
+                        lng,
+                        radiusMeters: hasLocation ? Math.round(preferences.maxDistanceKm * 1000) : null,
+                        pageSize: 5
                     });
-
-                    if (hasLocation) {
-                        findParams.set('locationbias', `circle:${Math.round(preferences.maxDistanceKm * 1000)}@${lat},${lng}`);
-                    }
-
-                    const findUrl = `https://maps.googleapis.com/maps/api/place/findplacefromtext/json?${findParams}`;
-                    const findRes = await fetch(findUrl);
-                    const findData = await findRes.json();
-
-                    if (findData.candidates && findData.candidates.length > 0) {
-                        const placeId = findData.candidates[0].place_id;
-
-                        // Step 2: Get full details including business_status
-                        const detailParams = new URLSearchParams({
-                            place_id: placeId,
-                            fields: 'place_id,name,business_status,rating,formatted_address,opening_hours,geometry,type,price_level',
-                            key: apiKey
-                        });
-
-                        const detailUrl = `https://maps.googleapis.com/maps/api/place/details/json?${detailParams}`;
-                        const detailRes = await fetch(detailUrl);
-                        const detailData = await detailRes.json();
-                        const place = detailData.result;
-
-                        if (!place || place.business_status === 'CLOSED_PERMANENTLY') {
-                            console.log(`Filtered out ${rec.name}: permanently closed`);
-                            continue;
-                        }
-
-                        const placeLat = place.geometry?.location?.lat;
-                        const placeLng = place.geometry?.location?.lng;
-                        const candidateName = normalizePlaceName(place.name || rec.name);
-                        const isVisited = visitedIds.has(place.place_id) || visitedNames.has(candidateName);
-                        const isDismissed = dismissedIds.has(place.place_id) || dismissedNames.has(candidateName);
-                        const isRecent = recentIds.has(place.place_id) || recentNames.has(candidateName);
-                        if (seenPlaceIds.has(place.place_id)) continue;
-                        if (isDismissed || isRecent || (rec.lane !== "reliable" && isVisited)) {
-                            console.log(`Filtered out ${rec.name}: conflicts with saved feedback`);
-                            continue;
-                        }
-                        if (mode === "three_lanes" && place.opening_hours?.open_now === false) {
-                            console.log(`Filtered out ${rec.name}: closed now`);
-                            continue;
-                        }
-                        if (mode === "three_lanes" && hasLocation
-                            && (!Number.isFinite(placeLat) || !Number.isFinite(placeLng))) {
-                            console.log(`Filtered out ${rec.name}: missing geometry`);
-                            continue;
-                        }
-                        if (hasLocation && Number.isFinite(placeLat) && Number.isFinite(placeLng)) {
-                            const candidateDistance = distanceKm(lat, lng, placeLat, placeLng);
-                            if (candidateDistance > preferences.maxDistanceKm) {
-                                console.log(`Filtered out ${rec.name}: ${candidateDistance.toFixed(1)} km away`);
-                                continue;
-                            }
-                        }
-                        if (mode === "three_lanes" && preferences.priceLevel
-                            && Number.isFinite(place.price_level)
-                            && place.price_level > preferences.priceLevel) {
-                            console.log(`Filtered out ${rec.name}: above price preference`);
-                            continue;
-                        }
-
+                    const place = candidates.find(candidate => isEligiblePlace(candidate, rec.lane));
+                    if (place) {
                         seenPlaceIds.add(place.place_id);
-
                         validated.push({
                             ...rec,
                             name: place.name || rec.name,
                             verified: true,
-                            google_rating: place.rating || null,
-                            address: place.formatted_address || null,
-                            is_open_now: place.opening_hours?.open_now ?? null,
+                            google_rating: place.google_rating,
+                            address: place.address || null,
+                            is_open_now: place.is_open_now,
                             types: place.types || [],
-                            price_level: place.price_level ?? null,
-                            lat: placeLat ?? null,
-                            lng: placeLng ?? null,
+                            price_level: place.price_level,
+                            lat: place.lat,
+                            lng: place.lng,
                             place_id: place.place_id
                         });
                     } else {
@@ -449,51 +395,35 @@ Return ONLY valid JSON without Markdown formatting brackets.`;
             const laneOrder = { reliable: 0, new: 1, wildcard: 2 };
 
             // Gemini can name the wrong branch of a chain even with location bias. Fill any
-            // missing lanes from a radius-restricted Places search so a dense neighborhood
-            // does not collapse to an empty result after validation.
+            // missing lanes from an open, budget-bounded Text Search. Google location-biases
+            // this search; the exact user circle remains enforced above before any result is used.
             if (mode === "three_lanes" && hasLocation && validated.length < 3) {
                 try {
-                    const nearbyParams = new URLSearchParams({
-                        location: `${lat},${lng}`,
-                        radius: String(Math.round(preferences.maxDistanceKm * 1000)),
-                        type: "restaurant",
-                        opennow: "true",
-                        key: apiKey
+                    const nearbyPlaces = await searchPlacesText({
+                        apiKey,
+                        textQuery: "restaurants",
+                        lat,
+                        lng,
+                        radiusMeters: Math.round(preferences.maxDistanceKm * 1000),
+                        openNow: true,
+                        maximumPriceLevel: preferences.priceLevel,
+                        pageSize: 20,
+                        rankPreference: "DISTANCE"
                     });
-                    if (preferences.priceLevel) {
-                        nearbyParams.set("maxprice", String(preferences.priceLevel));
-                    }
-
-                    const nearbyUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?${nearbyParams}`;
-                    const nearbyRes = await fetch(nearbyUrl);
-                    const nearbyData = await nearbyRes.json();
-                    if (!["OK", "ZERO_RESULTS"].includes(nearbyData.status)) {
-                        console.warn(`Nearby Places fallback failed: ${nearbyData.status || "unknown status"}`);
-                    }
 
                     const missingLanes = ["reliable", "new", "wildcard"]
                         .filter(lane => !validated.some(place => place.lane === lane));
-                    const nearbyPlaces = Array.isArray(nearbyData.results) ? nearbyData.results : [];
 
                     for (const place of nearbyPlaces) {
                         if (!missingLanes.length) break;
-                        const placeLat = place.geometry?.location?.lat;
-                        const placeLng = place.geometry?.location?.lng;
                         const candidateName = normalizePlaceName(place.name);
                         const isVisited = visitedIds.has(place.place_id) || visitedNames.has(candidateName);
-                        const isDismissed = dismissedIds.has(place.place_id) || dismissedNames.has(candidateName);
-                        const isRecent = recentIds.has(place.place_id) || recentNames.has(candidateName);
                         const laneIndex = missingLanes.findIndex(lane => lane === "reliable" || !isVisited);
+                        if (!candidateName || laneIndex === -1) continue;
+                        const lane = missingLanes[laneIndex];
+                        if (!isEligiblePlace(place, lane)) continue;
 
-                        if (!place.place_id || !candidateName || seenPlaceIds.has(place.place_id)) continue;
-                        if (isDismissed || isRecent || laneIndex === -1) continue;
-                        if (place.business_status === "CLOSED_PERMANENTLY" || place.opening_hours?.open_now === false) continue;
-                        if (!Number.isFinite(placeLat) || !Number.isFinite(placeLng)) continue;
-                        if (distanceKm(lat, lng, placeLat, placeLng) > preferences.maxDistanceKm) continue;
-                        if (preferences.priceLevel && Number.isFinite(place.price_level)
-                            && place.price_level > preferences.priceLevel) continue;
-
-                        const lane = missingLanes.splice(laneIndex, 1)[0];
+                        missingLanes.splice(laneIndex, 1);
                         const reasoning = lane === "reliable"
                             ? "A well-rated nearby option that fits your distance and budget."
                             : lane === "new"
@@ -512,18 +442,18 @@ Return ONLY valid JSON without Markdown formatting brackets.`;
                             price_range: Number.isFinite(place.price_level) ? "$".repeat(place.price_level) : "",
                             reasoning,
                             verified: true,
-                            google_rating: place.rating || null,
-                            address: place.vicinity || null,
-                            is_open_now: place.opening_hours?.open_now ?? null,
+                            google_rating: place.google_rating,
+                            address: place.address || null,
+                            is_open_now: place.is_open_now,
                             types: place.types || [],
-                            price_level: place.price_level ?? null,
-                            lat: placeLat,
-                            lng: placeLng,
+                            price_level: place.price_level,
+                            lat: place.lat,
+                            lng: place.lng,
                             place_id: place.place_id
                         });
                     }
                 } catch (err) {
-                    console.warn("Nearby Places fallback failed:", err.message);
+                    console.warn("Places Text Search fallback failed:", err.message);
                 }
             }
 

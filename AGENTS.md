@@ -55,13 +55,15 @@ bundler, or framework unless explicitly asked. `chart.js` is loaded via a plain
 - Firebase project: `lincoln-eats-77229` (see `.firebaserc`)
 - Firebase services in use: Hosting, Firestore, Cloud Functions (2nd gen, `nodejs22`), Auth (Google sign-in)
 - Firebase Storage is NOT configured — there is no `storage.rules` and no Storage bucket usage in the app. Don't assume Storage exists.
-- Cloud Functions: `functions/index.js` — two `onCall` v2 functions, `recommend` and `scanReceipt`, both call Gemini (`@google/genai`, model `gemini-2.5-flash`) via secrets (`GEMINI_API_KEY`, `MAPS_API_KEY` defined with `defineSecret`). `recommend` supports `chat` and `three_lanes` modes, accepts bounded device-local taste preferences, and validates immediate-decision suggestions against the Google Places API (Find Place + Place Details), distance, price, business status, and duplicate place IDs.
-- Browser Google Maps/Places: loaded dynamically in `public/js/app.js` via a `<script>` tag pointed at `maps.googleapis.com/maps/api/js`, using the same key exported as `mapsApiKey` from `firebase-config.js` (that key doubles as the Firebase Web API key — it's a public, referrer-restricted browser key, not a secret). Used for the Feed's address Autocomplete and the Map view's markers.
+- Cloud Functions: `functions/index.js` — two `onCall` v2 functions, `recommend` and `scanReceipt`, both call Gemini (`@google/genai`, model `gemini-2.5-flash`) via secrets (`GEMINI_API_KEY`, `MAPS_API_KEY` defined with `defineSecret`). `recommend` supports `chat` and `three_lanes` modes, accepts bounded device-local taste preferences, and validates immediate-decision suggestions with field-masked Places API (New) Text Search calls plus exact distance, price, open/business-status, feedback, and duplicate checks. `functions/places-new.js` owns the REST request/response adapter.
+- Browser Google Maps/Places: loaded dynamically in `public/js/app.js` via `maps.googleapis.com/maps/api/js`, using the public, referrer-restricted `mapsApiKey` exported from `firebase-config.js` (that key doubles as the Firebase Web API key — visibility client-side is normal). Both Feed restaurant search and manual location search use Places API (New) `PlaceAutocompleteElement`; `public/js/places-new.js` owns selection normalization, field fetching, race handling, and location bias. Maps markers and reverse geocoding continue through Maps JavaScript API.
+- Places rollout prerequisite: before releasing this source, the Google Cloud project must have **Places API (New)** enabled. The server-side `MAPS_API_KEY` secret must be allowed to call Places API (New), while the browser `mapsApiKey` must remain HTTP-referrer restricted and allow both Maps JavaScript API and Places API (New). Do not change APIs, key restrictions, billing, or secret values as part of local verification; verify those controls separately during an explicitly authorized rollout.
 
 ## Project shape
 
 - App entry: `public/index.html` — 4 views swapped by `data-view` (Home, Map, Saved, Profile), plus the Auth screen, the AI concierge modal, and a toast. `data-view="feed"` remains the internal key for Home.
-- Main client logic: `public/js/app.js` (~2,300 lines) — auth, the decision-first recommendation flow, per-user device-local taste preferences and pending check-in, Firestore CRUD for `saved_places`, Places Autocomplete, receipt scan flow, AI concierge chat, map rendering, profile dashboard/charts, Dining Circles (create/join/leave), and the `escapeHtml()` helper.
+- Main client logic: `public/js/app.js` (~2,800 lines) — auth, the decision-first recommendation flow, per-user device-local taste preferences and pending check-in, Firestore CRUD for `saved_places`, Places Autocomplete, receipt scan flow, AI concierge chat, map rendering, profile dashboard/charts, Dining Circles (create/join/leave), and the `escapeHtml()` helper.
+- Places adapters: `public/js/places-new.js` for browser autocomplete and `functions/places-new.js` for server Text Search. `scripts/places-new.test.mjs` provides provider-free request/response, normalization, failure, and race regressions.
 - Firebase client config + re-exported Firestore/Auth/Functions helpers: `public/js/firebase-config.js`
 - Styles: `public/css/styles.css` (plain CSS, no preprocessor)
 - Service worker: `public/sw.js` — network-first for app-shell files, cache name `lincoln-eats-v<N>`
@@ -77,6 +79,7 @@ There is no build step and no automated test suite. Before declaring done:
 ```sh
 node --check public/js/app.js       # syntax-check the client bundle
 node --check functions/index.js     # syntax-check the Cloud Functions
+node --test scripts/places-new.test.mjs  # provider-free Places API (New) contract checks
 ```
 
 Then verify manually and state exactly what you exercised:
@@ -95,6 +98,11 @@ Then verify manually and state exactly what you exercised:
   auth check, the Firestore query, and the Gemini prompt/JSON-parsing contract —
   there's no emulator-backed test for these. Do not deploy to test; that's a
   production action (see Guardrails).
+- For Places changes: use synthetic provider responses only during the normal
+  loop. Exercise Text Search request masks/filters/errors and autocomplete click,
+  keyboard, failure, stale-selection, reset, and bias behavior at desktop and
+  phone widths. Live Google requests and Cloud/API-key changes belong to a
+  separately authorized rollout smoke test.
 - If you touch `public/css/styles.css` or `public/js/app.js`, bump the cache-buster:
   the `?v=N` query params in `public/index.html` (`css/styles.css?v=16`,
   `js/app.js?v=16`) AND `CACHE_NAME` in `public/sw.js` (`lincoln-eats-v16`) must move

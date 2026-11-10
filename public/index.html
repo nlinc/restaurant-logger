@@ -7,7 +7,7 @@
     <title>Lincoln Eats — Food, Decided</title>
     <meta name="description" content="Get three nearby restaurant picks matched to your mood, then teach Lincoln your taste with one-tap feedback.">
     <meta name="theme-color" content="#0a0a0a">
-    <link rel="stylesheet" href="css/styles.css?v=26">
+    <link rel="stylesheet" href="css/styles.css?v=27">
     <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
     
     <!-- PWA Configurations -->
@@ -131,7 +131,7 @@
                     <fieldset class="preference-group">
                         <legend>Search near</legend>
                         <div class="location-preference-controls">
-                            <input id="location-override-search" type="text" autocomplete="off" placeholder="City, neighborhood, or address">
+                            <gmp-place-autocomplete id="location-override-search" aria-label="Search near a city, neighborhood, or address" placeholder="City, neighborhood, or address"></gmp-place-autocomplete>
                             <button id="use-current-location-btn" type="button">Use current location</button>
                         </div>
                         <p class="location-preference-help" id="location-preference-help">Use precise device location, or choose a place manually when it looks wrong.</p>
@@ -160,7 +160,7 @@
                     <div class="log-card">
                         <div class="form-group">
                             <label for="restaurant-search">Restaurant</label>
-                            <input type="text" id="restaurant-search" placeholder="Search for a place..." autocomplete="off">
+                            <gmp-place-autocomplete id="restaurant-search" aria-label="Restaurant" placeholder="Search for a place..."></gmp-place-autocomplete>
                         </div>
 
                         <div class="form-group">
@@ -340,7 +340,7 @@
         });
     </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script type="module" src="js/app.js?v=26"></script>
+    <script type="module" src="js/app.js?v=27"></script>
 </body>
 
 </html>

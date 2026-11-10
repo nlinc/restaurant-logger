@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lincoln-eats-v26';
+const CACHE_NAME = 'lincoln-eats-v27';
 const ASSETS = [
   '/',
   '/index.html',
@@ -6,6 +6,7 @@ const ASSETS = [
   '/css/styles.css',
   '/js/app.js',
   '/js/firebase-config.js',
+  '/js/places-new.js',
   '/icons/icon-180.png',
   '/icons/icon-192.png',
   '/icons/icon-512.png',

@@ -240,6 +240,7 @@ body {
 }
 
 .form-group input,
+.form-group gmp-place-autocomplete,
 .form-group textarea {
   width: 100%;
   padding: 0.7rem 0.9rem;
@@ -254,6 +255,7 @@ body {
 }
 
 .form-group input:focus,
+.form-group gmp-place-autocomplete:focus-within,
 .form-group textarea:focus {
   border-color: var(--border-focus);
   box-shadow: 0 0 0 3px var(--accent-soft);
@@ -1645,7 +1647,7 @@ body {
   grid-template-columns: minmax(0, 1fr) auto;
 }
 
-.location-preference-controls input {
+.location-preference-controls gmp-place-autocomplete {
   background: var(--bg-glass);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -1657,7 +1659,7 @@ body {
   padding: 0 0.75rem;
 }
 
-.location-preference-controls input:focus {
+.location-preference-controls gmp-place-autocomplete:focus-within {
   border-color: var(--border-focus);
   outline: none;
 }
@@ -1810,7 +1812,7 @@ body {
 .occasion-chip:focus-visible,
 .decision-location button:focus-visible,
 .location-preference-controls button:focus-visible,
-.location-preference-controls input:focus-visible,
+.location-preference-controls gmp-place-autocomplete:focus-visible,
 .preference-options button:focus-visible,
 .decision-primary:focus-visible,
 .text-action-btn:focus-visible,

@@ -5,16 +5,32 @@ import {
     query, where, orderBy, limit, onSnapshot, getDocs,
     signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged,
     httpsCallable, mapsApiKey
-} from './firebase-config.js?v=26';
+} from './firebase-config.js?v=27';
+import {
+    autocompletePlaceToLocation,
+    autocompletePlaceToSavedPlace,
+    configureAutocompleteElement,
+    createAutocompleteSelectionHandler,
+    installLocalPlacesPreviewProvider,
+    setAutocompleteLocationBias
+} from './places-new.js?v=27';
 
-// Dynamically load Google Maps script with obfuscated API key
-const mapsScript = document.createElement('script');
-mapsScript.src = `https://maps.googleapis.com/maps/api/js?key=${mapsApiKey}&libraries=places&callback=initAutocomplete`;
-mapsScript.async = true;
-mapsScript.defer = true;
-document.head.appendChild(mapsScript);
 const isLocalUiPreview = ['localhost', '127.0.0.1'].includes(window.location.hostname)
     && new URLSearchParams(window.location.search).get('ui-preview') === '1';
+const isLocalPlacesPreview = isLocalUiPreview
+    && new URLSearchParams(window.location.search).get('places-preview') === '1';
+
+// Dynamically load Google Maps and the Places API (New) widget with the public browser key.
+if (isLocalPlacesPreview) {
+    installLocalPlacesPreviewProvider();
+    window.initAutocomplete();
+} else {
+    const mapsScript = document.createElement('script');
+    mapsScript.src = `https://maps.googleapis.com/maps/api/js?key=${mapsApiKey}&libraries=places&loading=async&callback=initAutocomplete`;
+    mapsScript.async = true;
+    mapsScript.defer = true;
+    document.head.appendChild(mapsScript);
+}
 
 // ===== DOM Refs =====
 const authScreen = document.getElementById('auth-screen');
@@ -83,6 +99,9 @@ let selectedPlace = null;
 let tags = [];
 let autocomplete = null;
 let locationAutocomplete = null;
+let invalidateRestaurantSelection = () => {};
+let invalidateLocationSelection = () => {};
+let latestDeviceLocationRequest = 0;
 let map = null;
 let markers = [];
 let allPlaces = [];
@@ -377,25 +396,59 @@ function switchView(viewId) {
 async function setupAutocomplete() {
     // Wait for Google Maps API to load (bridged via _mapsReady promise in index.html)
     await window._mapsReady;
+    await google.maps.importLibrary('places');
 
-    autocomplete = new google.maps.places.Autocomplete(searchInput, {
-        types: ['restaurant', 'cafe', 'bar', 'food'],
-        fields: ['place_id', 'geometry', 'name', 'rating', 'types', 'formatted_address', 'price_level']
+    const restaurantSelectionHandler = createAutocompleteSelectionHandler({
+        fields: ['id', 'displayName', 'rating', 'types', 'formattedAddress', 'priceLevel', 'location'],
+        normalize: autocompletePlaceToSavedPlace,
+        onSelect: place => {
+            selectedPlace = place;
+            searchInput.value = place.name;
+            updateSaveBtn();
+        },
+        onError: error => {
+            selectedPlace = null;
+            updateSaveBtn();
+            showToast(error.message || 'Could not load that restaurant.', 'error');
+        }
+    });
+    invalidateRestaurantSelection = restaurantSelectionHandler.invalidate;
+    autocomplete = configureAutocompleteElement(searchInput, {
+        includedPrimaryTypes: ['restaurant', 'cafe', 'bar'],
+        onSelection: restaurantSelectionHandler
     });
 
-    autocomplete.addListener('place_changed', onPlaceChanged);
-
-    locationAutocomplete = new google.maps.places.Autocomplete(locationOverrideSearch, {
-        types: ['geocode'],
-        fields: ['geometry', 'name', 'formatted_address', 'address_components']
+    const locationSelectionHandler = createAutocompleteSelectionHandler({
+        fields: ['displayName', 'formattedAddress', 'location'],
+        normalize: autocompletePlaceToLocation,
+        onSelect: location => {
+            manualLocationOverride = location;
+            saveLocationPreference();
+            updateResolvedLocation(location);
+            locationOverrideSearch.value = location.label;
+            showToast(`Searching near ${location.label}.`, 'success');
+        },
+        onError: error => showToast(error.message || 'Could not load that location.', 'error')
     });
-    locationAutocomplete.addListener('place_changed', onLocationOverrideChanged);
+    invalidateLocationSelection = locationSelectionHandler.invalidate;
+    locationAutocomplete = configureAutocompleteElement(locationOverrideSearch, {
+        onSelection: event => {
+            latestDeviceLocationRequest += 1;
+            return locationSelectionHandler(event);
+        }
+    });
 
-    if (manualLocationOverride) setRestaurantAutocompleteBias(manualLocationOverride);
-    console.log('Places Autocomplete initialized.');
+    if (manualLocationOverride) {
+        locationOverrideSearch.value = manualLocationOverride.label;
+        setRestaurantAutocompleteBias(manualLocationOverride);
+    }
+    console.log('Places API (New) autocomplete initialized.');
 }
 
-setupAutocomplete();
+setupAutocomplete().catch(error => {
+    console.error('Places autocomplete setup failed:', error);
+    showToast('Place search is temporarily unavailable.', 'error');
+});
 
 searchInput.addEventListener('focus', async () => {
     if (selectedPlace || manualLocationOverride || lastResolvedLocation) return;
@@ -407,51 +460,16 @@ searchInput.addEventListener('focus', async () => {
     }
 });
 
-function onLocationOverrideChanged() {
-    const place = locationAutocomplete.getPlace();
-    const lat = place.geometry?.location?.lat();
-    const lng = place.geometry?.location?.lng();
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-        showToast('Choose a location from the suggestion list.', 'info');
-        return;
-    }
-
-    manualLocationOverride = {
-        lat,
-        lng,
-        label: getPlaceLocationLabel(place),
-        source: 'manual',
-        accuracy: null
-    };
-    saveLocationPreference();
-    updateResolvedLocation(manualLocationOverride);
-    locationOverrideSearch.value = manualLocationOverride.label;
-    showToast(`Searching near ${manualLocationOverride.label}.`, 'success');
-}
-
-
-function onPlaceChanged() {
-    const place = autocomplete.getPlace();
-
-    if (!place.geometry) {
-        selectedPlace = null;
-        updateSaveBtn();
-        return;
-    }
-
-    selectedPlace = {
-        place_id: place.place_id,
-        name: place.name,
-        google_rating: place.rating || null,
-        types: place.types || [],
-        address: place.formatted_address || '',
-        price_level: place.price_level ?? null,
-        lat: place.geometry.location.lat(),
-        lng: place.geometry.location.lng()
-    };
-
+searchInput.addEventListener('input', () => {
+    invalidateRestaurantSelection();
+    selectedPlace = null;
     updateSaveBtn();
-}
+});
+
+locationOverrideSearch.addEventListener('input', () => {
+    latestDeviceLocationRequest += 1;
+    invalidateLocationSelection();
+});
 
 // ===== Category Rating =====
 function getSelectedRating() {
@@ -531,6 +549,8 @@ changeLocationBtn.addEventListener('click', () => {
 });
 
 useCurrentLocationBtn.addEventListener('click', async () => {
+    invalidateLocationSelection();
+    const locationRequest = ++latestDeviceLocationRequest;
     const originalText = useCurrentLocationBtn.textContent;
     useCurrentLocationBtn.disabled = true;
     useCurrentLocationBtn.textContent = 'Locating…';
@@ -538,12 +558,14 @@ useCurrentLocationBtn.addEventListener('click', async () => {
 
     try {
         const location = await resolveDeviceLocation({ requirePrecise: true });
+        if (locationRequest !== latestDeviceLocationRequest) return;
         manualLocationOverride = null;
         saveLocationPreference();
         locationOverrideSearch.value = '';
         updateResolvedLocation(location);
         showToast('Using your current precise location.', 'success');
     } catch (error) {
+        if (locationRequest !== latestDeviceLocationRequest) return;
         renderLocationError(error);
         showToast(getLocationErrorMessage(error), 'error');
     } finally {
@@ -629,6 +651,9 @@ function getDefaultTastePreferences() {
 }
 
 function resetUserScopedClientState() {
+    invalidateRestaurantSelection();
+    invalidateLocationSelection();
+    latestDeviceLocationRequest += 1;
     selectedPlace = null;
     scannedReceiptData = null;
     tags = [];
@@ -646,7 +671,7 @@ function resetUserScopedClientState() {
     recommendationHistory.innerHTML = '';
     pendingCheckin.hidden = true;
     pendingCheckin.innerHTML = '';
-    searchInput.value = '';
+    if ('value' in searchInput) searchInput.value = '';
     notesInput.value = '';
     document.querySelectorAll('.category-rating input').forEach(input => { input.checked = false; });
     renderTags();
@@ -696,7 +721,7 @@ function loadLocationPreference() {
             source: 'manual',
             accuracy: null
         };
-        locationOverrideSearch.value = manualLocationOverride.label;
+        if (locationAutocomplete) locationOverrideSearch.value = manualLocationOverride.label;
         if (autocomplete) setRestaurantAutocompleteBias(manualLocationOverride);
     } catch (error) {
         console.warn('Could not load saved location:', error);
@@ -769,19 +794,10 @@ function formatLocationAccuracy(meters) {
     return `accurate to about ${(meters / 1609.344).toFixed(1)} mi`;
 }
 
-function getPlaceLocationLabel(place) {
-    return String(place.formatted_address || place.name || 'Selected location').slice(0, 160);
-}
-
 function setRestaurantAutocompleteBias(location) {
-    if (!autocomplete || !window.google?.maps || !Number.isFinite(location?.lat) || !Number.isFinite(location?.lng)) return;
+    if (!autocomplete) return;
     const radiusMeters = milesToKm(tastePreferences.maxDistanceMiles || 5) * 1000;
-    const bounds = new google.maps.Circle({
-        center: { lat: location.lat, lng: location.lng },
-        radius: radiusMeters
-    }).getBounds();
-    autocomplete.setBounds(bounds);
-    autocomplete.setOptions({ strictBounds: false });
+    setAutocompleteLocationBias(autocomplete, location, radiusMeters);
 }
 
 async function resolveDiningLocation({ requirePrecise = true } = {}) {
@@ -855,6 +871,7 @@ scanReceiptBtn.addEventListener('click', () => {
 receiptFileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    invalidateRestaurantSelection();
 
     // Reset file input so it can trigger change again on same file
     receiptFileInput.value = '';
@@ -1112,6 +1129,7 @@ async function handleSave(status) {
         applySavedPlaceLocally(savedPlaceId, payload);
 
         // Reset form
+        invalidateRestaurantSelection();
         searchInput.value = '';
         notesInput.value = '';
         selectedPlace = null;
@@ -1527,6 +1545,7 @@ function renderWishlistCards(places) {
         `;
 
         card.querySelector('.log-this-btn').addEventListener('click', () => {
+            invalidateRestaurantSelection();
             searchInput.value = place.name;
             selectedPlace = { ...place };
             switchView('feed');
@@ -1726,6 +1745,7 @@ async function handleRecommendationAction(rec, action, btn) {
     }
 
     if (action === 'visited') {
+        invalidateRestaurantSelection();
         selectedPlace = {
             ...recommendationToPlace(rec),
             id: rec.saved_place_id || null,
@@ -2804,7 +2824,7 @@ if ('serviceWorker' in navigator) {
             window.location.reload();
         });
 
-        navigator.serviceWorker.register('/sw.js?v=26')
+        navigator.serviceWorker.register('/sw.js?v=27')
             .then(reg => {
                 console.log('Service Worker registered successfully.', reg.scope);
 

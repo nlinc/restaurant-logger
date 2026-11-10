@@ -35,6 +35,10 @@
       "path": "js/firebase-config.js"
     },
     {
+      "source": "public/js/places-new.js",
+      "path": "js/places-new.js"
+    },
+    {
       "source": "public/manifest.json",
       "path": "manifest.json"
     },
@@ -53,6 +57,11 @@
       "node",
       "--check",
       "functions/index.js"
+    ],
+    [
+      "node",
+      "--test",
+      "scripts/places-new.test.mjs"
     ],
     [
       "node",
